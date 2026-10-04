@@ -20,9 +20,11 @@ beside the image: the sha256 of the `.sif`, the apptainer, Claude Code and pixi 
 from inside the image, the recipe's git SHA and the lock's sha256. **Commit the digest file** when an
 image is published; the `.sif` itself is never committed.
 
-**Status: no image has been built yet** — this recipe has not run on the grid or in CI, so there is
-no digest to cite. The CI lane `image (apptainer build)` is the first place it builds; the first
-grid build is Linear BEE-103's acceptance.
+**Status:** the recipe builds in CI (lane `image (apptainer build)`; first run 2026-10-04: apptainer
+1.3.6 from Ubuntu's archive, about two minutes, Claude Code 2.1.289 landed, image sha256
+`b8c07c3adcc9f2f53fd7ab5d8d2289b8bd2407b0e3b0fca88a458154c57408a1`, a runner's image that is
+discarded with the job). **No grid build yet and no committed digest**: the first build on a compute
+node, with its digest committed beside the recipe, is Linear BEE-103's acceptance.
 
 ## Run
 
