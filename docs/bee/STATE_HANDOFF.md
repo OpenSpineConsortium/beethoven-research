@@ -31,7 +31,7 @@ directory per container.
 | `CLAUDE_CONFIG_DIR` per profile, isolating sign-in, settings and history | **adopted** | *documented*: "each directory has its own settings, session history, and claude.ai login" (authentication page); the credential file and, on macOS, the Keychain entry are keyed to the directory, so two directories are two sign-ins with nothing shared |
 | profiles under `~/.config/claude_profiles/<name>` | **changed** to `~/.beethoven/accounts/<label>/claude` | D4 had already fixed the place; `main` is a link to the launcher's `~/.beethoven/claude`, so the worker's sign-in is one of the accounts without moving it |
 | `claude-auth-profile <name>`: `mkdir`, export, `claude auth login` | **adopted** as `bee account add <label>` | the same sitting, plus a 0700 directory, a checked label, the list entry, and `claude auth status` read back; `--console` (an API key that bills per use) is never passed, since usage credits are never used |
-| `claude-switch <name>`: export `CLAUDE_CONFIG_DIR` in the shell | **adopted** as `bee-use <label>` (`shell/bee.sh`, `shell/bee.ps1`) | it also sets `BEE_ACCOUNT`, which the hooks and the status line use to say which account a session runs on |
+| `claude-switch <name>`: export `CLAUDE_CONFIG_DIR` in the shell | **adopted** as `bee-use <label>` (`shell/bee.sh`, `shell/bee.ps1`) | it also sets `BEE_ACCOUNT`, which the hooks and the status line use to say which account a session runs on, and unsets every credential variable: an API key or a token left in the shell outranks the directory, and the switch would do nothing |
 | `alias claude='env CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-$HOME/.claude} claude'` | **refused** | *measured*: with the variable set, Claude Code keeps `.claude.json` inside the directory, while the default account keeps it at `~/.claude.json`. Pointing the default at `~/.claude` therefore strands the default account's global state (onboarding, trust, personal MCP servers) and it looks signed out. `bee` keeps the default account as "variable unset" (`bee account add <label> --default-location`), and `bee-use` unsets it |
 | `ls` of the profiles folder as the account list | **changed** to `accounts.json` (label, path, enabled, order, rest-until) | the list must not be read off the disk inside sign-in directories; `bee account list` shows it and `bee account status` asks each directory's `claude auth status` |
 | direnv `.envrc` pinning a project to an account | **adopted** as `bee account pin <label>` / `unpin` | a marked block in `.envrc`, so the rest of the file is left as it was; for a pinned project `bee run` with no label uses the pinned account |
@@ -91,7 +91,7 @@ step still has no reading (it has `StopFailure`); that half stays not yet measur
 | Guide | Here | Why |
 | - | - | - |
 | the 60 % rule | **adopted** as the status line's prompt at 60 % context ("/compact focus on: ..."); the CLAUDE.md "Compact Instructions" section is left to each project | nothing compacts behind the student's back; the threshold is a hint |
-| `/compact focus on: ...` | **adopted**; the `PreCompact` hook refreshes the state first, so the summary is made from current state | |
+| `/compact focus on: ...` | **adopted**; the `PreCompact` hook refreshes `PROJECT_STATE.md` and re-checks the hand-off file, and the `SessionStart` hook with the `compact` source injects the state after the summary | a `PreCompact` hook cannot add to the summary itself (hooks reference), so the state reaches the next turn through `SessionStart` |
 | `/autocompact 100k` | **changed** to the `--autocompact` flag for one launch (`bee run -- --autocompact 100k`) or `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000` in a job | *documented* (model configuration page): `/autocompact` saves the window to user settings, which with `CLAUDE_CONFIG_DIR` set is a file inside the sign-in directory, so it changes every later session of that account; the flag overrides the saved setting for one launch without changing it; the variable takes a plain integer only (`100k` reads as 100 and clamps to the 100,000 minimum) |
 | "/compact is undocumented" | corrected | it is documented (commands page) |
 | permission modes table | **kept as advice**; the image disables `bypassPermissions` | `disableBypassPermissionsMode` in the managed settings, unchanged |
@@ -101,7 +101,7 @@ step still has no reading (it has `StopFailure`); that half stays not yet measur
 
 | Guide | Here | Why |
 | - | - | - |
-| "`.claudeignore` does not exist; use `permissions.deny`" | **agreed**, and both are used | `bee init` adds `Read(...)` deny rules generated from the file (when it has no `!` lines, which deny rules cannot express) and always `Read(**/.credentials.json)` and the `.env` rules |
+| "`.claudeignore` does not exist; use `permissions.deny`" | **agreed**, and both are used | `bee init` adds `Read(...)` deny rules generated from the file (when it has no `!` lines, which deny rules cannot express), takes back the ones it made earlier for patterns since removed, and always denies the sign-in files where they are (`Read(//**/.credentials.json)`, `Read(~/.claude/.credentials.json)`, `Read(~/.beethoven/**/.credentials.json)`: a bare pattern would be relative to the project) and the `.env` rules |
 | the `PreToolUse` hook script | **rewritten** (`claudeignore.py`) | the guide's script runs `grep -q "$TARGET_PATH" .claudeignore`: it looks for the path's text inside the ignore file, so `node_modules/` never matches `src/node_modules/x.js`, an absolute path matches nothing, and a path that happens to be a substring of a comment is refused. `claudeignore.py` implements gitignore's rules (anchors, `**`, `*`, `?`, classes, directory-only patterns, `!` re-inclusion, "a file inside an excluded folder cannot be re-included"), judges Read, Edit, Write, MultiEdit, NotebookEdit, Grep, Glob and LS, resolves links before judging, and always refuses `.credentials.json` |
 | the hook returns a JSON deny with a reason | **adopted** | the model reads the reason and chooses another path; a malformed event fails open with a note on stderr, because the deny rules and the guard stand behind it |
 | `sandbox.filesystem.denyRead` | **not adopted** | not checked against the sandboxing page in this change, and Claude Code's sandbox is unset in the image (whether it nests in Apptainer is not yet measured, `containers/README.md`) |
@@ -113,8 +113,10 @@ agents repository of the split (`/mnt/project-files/plan/REPO_SPLIT.md`, `beetho
 one piece. `handoff.py` and `claudeignore.py` import nothing of the package, because the image runs
 them as files. The places it had to touch outside that folder, each small:
 
-- `containers/managed-settings.json`: the hooks and the status line, run with the image's python
-  from `/opt/beethoven-research/hooks/`; deny rules for `claude auth login` and
+- `containers/managed-settings.json`: the hooks and the status line, run with the image's python,
+  isolated (`python -I`), from `/opt/beethoven-research/hooks/`; the guard runs the same way, so
+  neither `PYTHONPATH` nor a module file in the bound project stands in for one they import; deny
+  rules for `claude auth login` and
   `claude project purge`. `allowManagedHooksOnly` is on in the image, so a project's own hooks
   never run there; these are the ones that do.
 - `containers/claude-verify.def`: bakes the two files beside the guard and smoke-tests both; the
@@ -130,11 +132,41 @@ them as files. The places it had to touch outside that folder, each small:
   task. Re-locked with pixi 0.81.0; every one of the 70 `linux-64` entries is byte for byte the
   same as before, so the image and CI reconstruct the same environment.
 
-## 8. Not yet measured
+## 8. What bee checks before it starts a session
+
+An adversarial review of the first version (four reviewers, each finding then re-checked by a
+second) found what these close; every one has a test in `tests/bee/`.
+
+- **The transcript of a fork.** `session.json` sits in the project, which a session can write, so
+  `continue --fork` believes it only for a file named after the recorded session in the projects
+  folder of the account that wrote it. On the grid the script resolves the path again on the host,
+  links included, before it binds anything. A path to a sign-in file or to a key under `$HOME` is
+  refused, never bound or resumed.
+- **A project that would bill another way.** A project whose `.claude/settings.json` or
+  `settings.local.json` names `apiKeyHelper`, `awsCredentialExport`, `awsAuthRefresh` or
+  `gcpAuthRefresh`, or sets any credential variable in `env`, is refused before anything starts
+  (names only; no value is read out). Each of those outranks the subscription.
+- **Where it runs.** A Slurm job id is not enough: an `salloc` shell has one and still runs on the
+  login node, so bee and `bee-grid.sh` also require the node slurmd names for a job step. On the
+  grid the agent markers (`CLAUDECODE` and the two request ids) are checked before `--cleanenv`
+  hides them, as on the laptop.
+- **One project, one place.** The grid binds each project at `/work/<folder>-<hash>`, so what Claude
+  Code records per folder (the trust answer, approved servers) belongs to that project. Each call
+  gets its own node-local temp, so a second call in the same job never removes a running session's
+  `/tmp`.
+- **The limit record.** The rest counts from the hit, not from when bee next runs; a record whose
+  window has reset rests nothing; the record keeps only its own session's reading; and a session
+  that goes on after a limit (Claude Code waits for the reset, or the person types again) retires
+  it at its next finished turn.
+
+## 9. Not yet measured
 
 - Bash 4.2 (the grid's CentOS 7): `bee-grid.sh` is written to that subset and tested under the
   runner's bash with a stand-in `apptainer`; a real run on a compute node is the runbook's step G3.
 - That the status line's `rate_limits` arrive on greg's Max plans on the grid as documented.
+- That apptainer 1.2.2 on the grid makes the mount points `/work/<folder>-<hash>` and
+  `/handoff/<id>.jsonl` inside the read-only image (it needs its underlay or overlay); the
+  runbook's first `bee-grid run` shows it.
 - Probe M13 (ACCOUNTS.md section 9): where a forked continuation is written, and its first turn's
   cost.
 - Whether `claude auth status` inside the image answers for a directory bound at `/claude` exactly

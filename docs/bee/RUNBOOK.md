@@ -62,8 +62,13 @@ bee init
 
 This writes into `.claude/settings.local.json` (kept out of git through `.git/info/exclude`) the
 state hooks, the `.claudeignore` hook, deny rules for sign-in files and `.env`, and bee's status
-line; and, when absent, `.claude/commands/handoff.md`, `.claude/commands/hydrate.md` and a
-`.claudeignore`. Running it again adds nothing. On Windows the hooks run under Git Bash, which
+line (`--no-statusline` keeps one of your own); and, when absent, `.claude/commands/handoff.md`,
+`.claude/commands/hydrate.md` and a `.claudeignore`. Running it again adds nothing, and takes back
+the deny rules of patterns you have since removed from `.claudeignore`.
+
+`bee run` refuses a project whose `.claude/settings.json` or `settings.local.json` names an
+`apiKeyHelper` or sets an API key in `env`: those would bill the session another way. Remove them
+first. On Windows the hooks run under Git Bash, which
 Claude Code uses for hooks there.
 
 ## Laptop, every day
@@ -77,7 +82,7 @@ Claude Code uses for hooks there.
 | continue on a particular account | `bee continue personal` |
 | carry the whole conversation instead of the hand-off file | `bee continue --fork` (an uncached first turn; see STATE_HANDOFF.md section 3) |
 | context at 60 % | `/compact focus on: <the open problem>, <the decision to keep>`; the status line reminds you |
-| switch the plain `claude` in this shell | `bee-use work`, then `claude` as usual |
+| switch the plain `claude` in this shell | `bee-use work`, then `claude` as usual (it also clears any API key or token variable in this shell) |
 | always use one account in one project | `bee account pin work` (writes a block into `.envrc`; then `direnv allow`); `bee account unpin` |
 | take an account out of the rotation for a while | `bee account disable work`, later `bee account enable work` |
 | say an account is spent (and until when) | `bee account spent work --hours 3`; `bee account rested work` undoes it |
@@ -115,8 +120,9 @@ bash containers/build.sh --out /rs/rs_grp_oschome/shared/beethoven/containers
 `BEE_IMAGE` names another. The launcher's `claude-node22` image has no engine environment, so bee
 cannot run in it.
 
-**G1. An interactive allocation** (Wayne State's test partition; the portal's compute-node shell
-does the same):
+**G1. A shell on a compute node** (Wayne State's test partition). It has to come from `srun`: an
+`salloc` shell stays on the login node, and `bee-grid.sh` refuses it. Whether the portal's
+compute-node shell counts as a job step is not yet checked.
 
 ```sh
 srun -p secp --qos=secondary -t 4:00:00 -c 4 --mem=16G --pty bash
@@ -150,7 +156,7 @@ bee-grid status                    # every account: signed in (..., max)
 ## Grid, every day
 
 ```sh
-srun -p secp --qos=secondary -t 4:00:00 -c 4 --mem=16G --pty bash    # or the portal's shell
+srun -p secp --qos=secondary -t 4:00:00 -c 4 --mem=16G --pty bash
 cd /rs/rs_grp_oschome/$USER/some-project
 bee-grid run main                  # Claude Code in the image, as main, with bee's hooks and status line
 bee-grid continue                  # after a hand-off or a limit: the next account, from the hand-off file
@@ -159,8 +165,11 @@ bee-grid account spent main --hours 2
 bee-grid handoff check
 ```
 
-Each container sees one sign-in directory, at `/claude`, and the project at `/work`. The image's
-managed settings run bee's hooks whether or not the project ran `bee init`. `--run-dir DIR` puts the
+Each container sees one sign-in directory, at `/claude`, and the project at
+`/work/<folder>-<hash>`, a path of its own, so what Claude Code records per folder (the trust
+answer, approved servers) stays with that project. The image's managed settings run bee's hooks
+whether or not the project ran `bee init`; without `bee init` there is no `/handoff`, so at the
+threshold the status line says `ask for the hand-off file, then exit and run bee-grid continue`. `--run-dir DIR` puts the
 state folder in an engine run directory instead of the project. At a terminal, `bee-grid run`
 offers the next account when a session stops on a usage limit, as on the laptop.
 

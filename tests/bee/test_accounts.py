@@ -218,5 +218,6 @@ def test_login_node_is_refused(tmp_path: Path) -> None:
     sbatch.chmod(0o755)
     env = {"PATH": str(tmp_path)}
     assert "login node" in acc.login_node_refusal(env)
-    assert acc.login_node_refusal({**env, "SLURM_JOB_ID": "1"}) == ""
+    assert "login node" in acc.login_node_refusal({**env, "SLURM_JOB_ID": "1"})  # an salloc shell
+    assert acc.login_node_refusal({**env, "SLURM_JOB_ID": "1", "SLURMD_NODENAME": "n1"}) == ""
     assert acc.login_node_refusal({"PATH": "/nonexistent"}) == ""

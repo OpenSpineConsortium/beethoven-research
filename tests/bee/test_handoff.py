@@ -94,6 +94,12 @@ def test_fingerprint_follows_the_tree() -> None:
         "xoxb-1234567890-abc",
         "eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4",
         "Bearer " + "e" * 30,
+        "sk-proj-" + "f" * 24,
+        "AIza" + "G" * 35,
+        "ASIA" + "H" * 16,
+        "glpat-" + "i" * 20,
+        "sk_live_" + "j" * 24,
+        "npm_" + "k" * 36,
     ],
 )
 def test_redaction_catches_published_token_shapes(secret: str) -> None:
@@ -108,6 +114,30 @@ def test_redaction_keeps_ordinary_text_and_key_names() -> None:
     assert n == 2 and "password = [redacted]" in text and "api_key: [redacted]" in text
     pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"
     assert h.redact(pem) == ("[redacted]", 1)
+
+
+@pytest.mark.parametrize(
+    ("line", "kept"),
+    [
+        ("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENG", "AWS_SECRET_ACCESS_KEY=[redacted]"),
+        ("DB_PASSWORD=hunter2hunter2", "DB_PASSWORD=[redacted]"),
+        ('password = "hunter2hunter2"', 'password = "[redacted]"'),
+        ('"api_key": "abcdef123456"', '"api_key": "[redacted]"'),
+        ("export SECRET='abcdefghijkl'", "export SECRET='[redacted]'"),
+        (
+            "postgres://admin:S3cretPassw0rd@db.example.org/app",
+            "postgres://admin:[redacted]@db.example.org/app",
+        ),
+    ],
+)
+def test_redaction_catches_prefixed_quoted_and_url_secrets(line: str, kept: str) -> None:
+    assert h.redact(line) == (kept, 1)
+    assert h.redact(kept) == (kept, 0)  # a second pass finds nothing more
+
+
+def test_redaction_leaves_counts_and_plain_urls() -> None:
+    for plain in ("max_tokens: 100000", "context_tokens: 45000", "see https://user@host/x"):
+        assert h.redact(plain) == (plain, 0)
 
 
 def test_parse_the_guides_own_schema() -> None:
@@ -349,3 +379,78 @@ def test_hooks_run_by_path_as_the_image_runs_them(env: Path, project: Path) -> N
         check=True,
     )
     assert "PROJECT STATE" in json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_a_limit_keeps_only_its_own_sessions_reading(env: Path, project: Path) -> None:
+    """The project's usage.json may still hold the account before: its resets are not this one's."""
+    env.mkdir(parents=True, exist_ok=True)
+    (env / "usage.json").write_text(
+        json.dumps(
+            {
+                "label": "first",
+                "session_id": "s0",
+                "five_hour_pct": 88,
+                "five_hour_resets_at": 1_900_000_000,
+                "seven_day_pct": 100,
+                "seven_day_resets_at": 1_900_500_000,
+            }
+        )  # fmt: skip
+    )
+    run_hook("stop-failure", {"session_id": "s1", "error": "rate_limit"})
+    limit = json.loads((env / "limit.json").read_text())
+    assert limit["account"] == "second" and limit["five_hour_resets_at"] == 0
+    assert limit["seven_day_pct"] is None and limit["seven_day_resets_at"] == 0
+
+
+def test_a_limit_the_session_outlived_is_retired(env: Path, project: Path) -> None:
+    run_hook("stop-failure", {"session_id": "s1", "error": "rate_limit"})
+    run_hook("stop", {"session_id": "other", "cwd": str(project)})
+    assert "handled" not in json.loads((env / "limit.json").read_text())
+    run_hook("stop", {"session_id": "s1", "cwd": str(project)})  # the same session went on
+    assert "went on" in json.loads((env / "limit.json").read_text())["handled"]
+
+
+def test_stop_makes_no_state_folder_without_the_gate(tmp_path: Path, env: Path) -> None:
+    elsewhere = tmp_path / "plain"
+    elsewhere.mkdir()
+    run_hook("stop", {"session_id": "s1", "cwd": str(elsewhere)})
+    assert not (elsewhere / ".claude").exists()
+
+
+def test_a_fenced_comment_is_not_a_heading() -> None:
+    text = GUIDE_EXAMPLE.replace(
+        "1. Run grep to find the serializer.",
+        "1. Run grep to find the serializer:\n   ```sh\n   # reproduce the error first\n   ```",
+    )
+    report = h.parse_context(text)
+    assert report.ok and report.next_actions == 3 and not report.repairs[1:]
+
+
+def test_the_status_line_speaks_this_machines_words(
+    env: Path, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = {"five_hour": {"used_percentage": 95, "resets_at": 1_900_000_000}}
+    event = {"session_id": "s1", "cwd": str(project), "rate_limits": window}
+    monkeypatch.setenv("BEE_CONTINUE_HINT", "bee-grid continue")
+    line = run_hook("statusline", event)
+    assert "ask for the hand-off file, then exit and run bee-grid continue" in line
+    (project / ".claude" / "commands").mkdir(parents=True)
+    (project / ".claude" / "commands" / "handoff.md").write_text("x\n")
+    monkeypatch.delenv("BEE_CONTINUE_HINT")
+    assert "/handoff, then exit and run bee continue" in run_hook("statusline", event)
+
+
+def test_the_status_line_survives_a_failed_record(
+    env: Path, project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("x\n")
+    monkeypatch.setenv("BEE_REGISTRY_DIR", str(blocker / "registry"))
+    monkeypatch.setenv("NO_COLOR", "1")
+    line = run_hook(
+        "statusline",
+        {"session_id": "s1", "cwd": str(project),
+         "rate_limits": {"five_hour": {"used_percentage": 40, "resets_at": 1_900_000_000}}},
+    )  # fmt: skip
+    assert line.startswith("bee:second · 5h 40%")
+    assert "statusline" in (env / "hook-errors.log").read_text()

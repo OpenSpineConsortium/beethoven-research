@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py",
             "timeout": 10
           }
         ]
@@ -67,7 +67,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py",
             "timeout": 10
           }
         ]
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/claudeignore.py",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/claudeignore.py",
             "timeout": 10
           }
         ]
@@ -89,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py session-start",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py session-start",
             "timeout": 30
           }
         ]
@@ -101,7 +101,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py post-tool-use",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py post-tool-use",
             "timeout": 30,
             "async": true
           }
@@ -114,7 +114,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py pre-compact",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py pre-compact",
             "timeout": 30
           }
         ]
@@ -125,7 +125,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py stop",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py stop",
             "timeout": 30
           }
         ]
@@ -136,7 +136,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py stop-failure",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py stop-failure",
             "timeout": 30
           }
         ]
@@ -145,7 +145,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/handoff.py statusline",
+    "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py statusline",
     "padding": 0
   }
 }

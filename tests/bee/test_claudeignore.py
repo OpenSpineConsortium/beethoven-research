@@ -64,6 +64,25 @@ def test_comments_blanks_and_escapes() -> None:
     assert ci.ignored_by(rules, "#literal", False) == "\\#literal"
 
 
+@pytest.mark.parametrize(
+    ("pattern", "rel", "ignored"),
+    [
+        ("foo**bar", "fooxbar", True),
+        ("foo**bar", "foo/bar", False),  # git: ** inside a segment is one *
+        ("foo**bar", "foo/x/bar", False),
+        ("a/**/b", "a/x/y/b", True),
+        ("a/**", "a/b/c", True),
+        ("[^a]bc", "bbc", True),  # ^ negates, like !
+        ("[^a]bc", "abc", False),
+        ("sp\\ ", "sp ", True),  # an escaped trailing space stays
+        ("sp\\ ", "sp", False),
+    ],
+)
+def test_globs_follow_git_where_they_differed(pattern: str, rel: str, ignored: bool) -> None:
+    """Each case checked against git check-ignore --no-index."""
+    assert bool(ci.ignored_by(ci.compile_rules(pattern + "\n"), rel, False)) is ignored
+
+
 def test_deny_rules(rules: tuple[ci.Rule, ...]) -> None:
     assert ci.deny_rules(rules) == ()  # a ! line: the hook alone
     plain = ci.compile_rules("node_modules/\n/build\n*.log\n")
@@ -98,6 +117,8 @@ def test_the_file_tools(repo: Path) -> None:
     assert ask("Grep", repo, pattern="x", path=str(repo / "src")) is None
     assert ask("Glob", repo, pattern="node_modules/**/*.js") is not None
     assert ask("Glob", repo, pattern="**/*.py") is None
+    assert ask("Grep", repo, pattern="x", glob="node_modules/**") is not None  # Grep's own glob
+    assert ask("Grep", repo, pattern="x", glob="*.py") is None
     assert ask("Bash", repo, command="cat node_modules/x") is None  # not a file tool
     assert ask("Read", repo, file_path="/etc/hostname") is None  # outside the project
 

@@ -8,6 +8,7 @@ those calls is the runbook's probe, not this file's.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -51,7 +52,8 @@ def test_bee_use_switches_the_shell(home: Path) -> None:
         "bee-use nobody 2>/dev/null || echo refused\n"
         "bee-which\n"
     )
-    env = {**_shell_env(home), "CLAUDE_CONFIG_DIR": "/old"}
+    env = {**_shell_env(home), "CLAUDE_CONFIG_DIR": "/old", "ANTHROPIC_API_KEY": "left-behind"}
+    script += 'printf "%s\\n" "${ANTHROPIC_API_KEY-cleared}"\n'
     out = subprocess.run(
         ["bash", "-c", script], capture_output=True, text=True, env=env, check=True
     )
@@ -61,6 +63,7 @@ def test_bee_use_switches_the_shell(home: Path) -> None:
         "unset|personal",
         "refused",
         "personal (Claude Code's default place)",
+        "cleared",
     ]
 
 
@@ -136,7 +139,7 @@ class Grid:
         self.rows = tmp_path / "rows.tsv"
         self.job = f"9{os.getpid()}{len(str(tmp_path))}"
         self.user = os.environ.get("USER") or "tester"
-        self.scratch = Path(f"/tmp/{self.user}/bee_{self.job}")
+        self.scratch_prefix = f"/tmp/{self.user}/bee_{self.job}_"
         self.env = {
             "PATH": f"{FAKES}:{os.environ['PATH']}",
             "HOME": str(home),
@@ -144,6 +147,7 @@ class Grid:
             "BEETHOVEN_HOME": str(self.bhome),
             "BEE_IMAGE": str(self.image),
             "SLURM_JOB_ID": self.job,
+            "SLURMD_NODENAME": "n1",
             "FAKE_APPTAINER_LOG": str(self.log),
             "FAKE_ROWS_FILE": str(self.rows),
         }
@@ -178,6 +182,15 @@ def grid(tmp_path: Path, home: Path) -> Grid:
     return Grid(tmp_path, home)
 
 
+def work(project: Path) -> str:
+    """Where bee-grid.sh binds a project: a path of its own under /work."""
+    return f"/work/{project.name}-{hashlib.sha256(str(project).encode()).hexdigest()[:8]}"
+
+
+def scratch(call: list[str]) -> str:
+    return next(x for x in binds(call) if x.endswith(":/tmp")).rsplit(":", 1)[0]
+
+
 def binds(call: list[str]) -> list[str]:
     return [call[i + 1] for i, a in enumerate(call) if a == "--bind"]
 
@@ -189,7 +202,29 @@ def envs(call: list[str]) -> list[str]:
 def test_grid_refuses_outside_a_job(grid: Grid) -> None:
     out = grid.run("list", SLURM_JOB_ID="")
     assert out.returncode == 1 and "compute node" in out.stderr
+    # An salloc shell: a job id, but no step on a compute node.
+    out = grid.run("list", SLURMD_NODENAME="")
+    assert out.returncode == 1 and "compute node" in out.stderr
     assert grid.calls() == []
+
+
+def test_grid_refuses_inside_a_claude_code_session(grid: Grid, project: Path) -> None:
+    b = grid.account("b")
+    for sub in (("run", "b"), ("continue",), ("add", "x"), ("login", "b")):
+        out = grid.run(
+            *sub, "--project", str(project), CLAUDECODE="1", FAKE_PLAN=f"b\t{b}\trun\t\t"
+        )
+        assert out.returncode == 1 and "Claude Code session" in out.stderr, sub
+    assert grid.calls() == []
+    assert grid.run("list", CLAUDECODE="1").returncode == 0  # reading the list is fine
+
+
+def test_grid_gives_every_call_its_own_temp(grid: Grid) -> None:
+    assert grid.run("list").returncode == 0
+    assert grid.run("list").returncode == 0
+    first, second = (scratch(c) for c in grid.calls())
+    assert first != second and first.startswith(grid.scratch_prefix)
+    assert not Path(first).exists() and not Path(second).exists()
 
 
 def test_grid_refuses_without_the_image(grid: Grid) -> None:
@@ -206,10 +241,10 @@ def test_grid_continue_binds_one_sign_in_per_container(grid: Grid, project: Path
     planned, status, session = grid.calls()
     for call in (planned, status, session):
         assert call[:4] == ["exec", "--containall", "--cleanenv", "--no-home"]
-        assert f"{grid.scratch}:/tmp" in binds(call)
+        assert scratch(call) == scratch(planned) and scratch(call).startswith(grid.scratch_prefix)
         signed = [x for x in binds(call) if x.endswith(":/claude")]
         assert signed == ([] if call is planned else [f"{b}:/claude"])
-    planned_args = ["plan", "continue", "--project", "/work", "--strategy", "order"]
+    planned_args = ["plan", "continue", "--project", work(project), "--strategy", "order"]
     assert grid.after_image(planned)[-6:] == planned_args
     assert f"{grid.registry}:/beethoven/engine" in binds(planned)
     assert grid.after_image(status)[-5:] == ["account", "status", "b", "--bound", "/claude"]
@@ -217,13 +252,24 @@ def test_grid_continue_binds_one_sign_in_per_container(grid: Grid, project: Path
     assert f"{grid.registry}/usage:/beethoven/engine/usage" in binds(session)
     assert f"{grid.registry}:/beethoven/engine" not in binds(session)
     assert not any(x.endswith(":/engine:ro") for x in binds(session))
-    assert f"{project}:/work" in binds(session) and session[session.index("--pwd") + 1] == "/work"
+    assert f"{project}:{work(project)}" in binds(session)
+    assert session[session.index("--pwd") + 1] == work(project)
     assert {"BEETHOVEN_HANDOFF_GATE=1", "BEETHOVEN_HANDOFF=1", "CLAUDE_CONFIG_DIR=/claude",
             "BEE_ACCOUNT=b"} <= set(envs(session))  # fmt: skip
     assert grid.after_image(session) == [
         "claude", "Read .claude/state/HYDRATE.md and follow it.", "--model", "x"
     ]  # fmt: skip
-    assert not grid.scratch.exists()  # node-local temp is gone with the script
+    assert not Path(scratch(session)).exists()  # node-local temp is gone with the script
+
+
+def test_grid_reads_the_plan_from_its_last_line(grid: Grid, project: Path) -> None:
+    b = grid.account("b")
+    plan = f"a reached its usage limit; it rests until 15:00.\nb\t{b}\trun\t\t"
+    out = grid.run("run", "--project", str(project), FAKE_PLAN=plan)
+    assert out.returncode == 0, out.stderr
+    _, status, session = grid.calls()
+    assert grid.after_image(status)[-5:] == ["account", "status", "b", "--bound", "/claude"]
+    assert "BEE_ACCOUNT=b" in envs(session)
 
 
 def test_grid_fork_binds_the_transcript_read_only(grid: Grid, project: Path) -> None:
@@ -233,7 +279,7 @@ def test_grid_fork_binds_the_transcript_read_only(grid: Grid, project: Path) -> 
     transcript.parent.mkdir(parents=True)
     transcript.write_text("{}\n")
     prompt = "Continue where you stopped; this session now runs as b."
-    plan = f"b\t{b}\tfork\t{transcript}\t{prompt}"
+    plan = f"b\t{b}\tfork\t{transcript}\t{prompt}\t{a}"
     out = grid.run("continue", "--fork", "--project", str(project), FAKE_PLAN=plan)
     assert out.returncode == 0, out.stderr
     planned, _, session = grid.calls()
@@ -247,11 +293,34 @@ def test_grid_fork_binds_the_transcript_read_only(grid: Grid, project: Path) -> 
 
 
 def test_grid_fork_without_the_transcript_stops(grid: Grid, project: Path) -> None:
+    a = grid.account("a")
     b = grid.account("b")
-    plan = f"b\t{b}\tfork\t{grid.tmp / 'gone.jsonl'}\tx"
+    plan = f"b\t{b}\tfork\t{a / 'projects' / 'w' / 'gone.jsonl'}\tx\t{a}"
     out = grid.run("continue", "--fork", "--project", str(project), FAKE_PLAN=plan)
     assert out.returncode == 1 and "not there" in out.stderr
     assert len(grid.calls()) == 2  # no session started
+
+
+def test_grid_fork_binds_nothing_but_a_session_file_of_its_account(
+    grid: Grid, project: Path
+) -> None:
+    """Checked again on the host, where links resolve: the plan's path came from a record the
+    last session could write."""
+    a = grid.account("a")
+    b = grid.account("b")
+    key = a / ".credentials.json"
+    key.write_text("{}\n")
+    other = grid.tmp / "elsewhere" / "s1.jsonl"
+    other.parent.mkdir()
+    other.write_text("{}\n")
+    link = a / "projects" / "w" / "s1.jsonl"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(key)
+    for path in (key, other, link):
+        plan = f"b\t{b}\tfork\t{path}\tx\t{a}"
+        out = grid.run("continue", "--fork", "--project", str(project), FAKE_PLAN=plan)
+        assert out.returncode == 1 and "not a session file" in out.stderr, path
+    assert not any(grid.after_image(c)[:1] == ["claude"] for c in grid.calls())
 
 
 def test_grid_run_dir_moves_the_state(grid: Grid, project: Path) -> None:
@@ -261,7 +330,7 @@ def test_grid_run_dir_moves_the_state(grid: Grid, project: Path) -> None:
                    FAKE_PLAN=f"b\t{b}\trun\t\t")  # fmt: skip
     assert out.returncode == 0, out.stderr
     planned, _, session = grid.calls()
-    planned_args = ["plan", "run", "b", "--project", "/work", "--strategy", "order"]
+    planned_args = ["plan", "run", "b", "--project", work(project), "--strategy", "order"]
     assert grid.after_image(planned)[-7:] == planned_args
     for call in (planned, session):
         assert f"{run_dir}:/run_dir" in binds(call) and "BEETHOVEN_RUN_ROOT=/run_dir" in envs(call)
@@ -336,9 +405,9 @@ def test_grid_handoff_import_maps_the_file_into_the_project(grid: Grid, project:
     )
     assert out.returncode == 0, out.stderr
     call = grid.calls()[-1]
-    assert f"{project}:/work" in binds(call)
+    assert f"{project}:{work(project)}" in binds(call)
     assert grid.after_image(call)[-5:] == [
-        "handoff", "import", "/work/notes/ctx.md", "--project", "/work"
+        "handoff", "import", f"{work(project)}/notes/ctx.md", "--project", work(project)
     ]  # fmt: skip
     outside = grid.tmp / "elsewhere.md"
     outside.write_text("x\n")

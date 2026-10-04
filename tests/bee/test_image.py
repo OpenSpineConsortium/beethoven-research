@@ -14,7 +14,7 @@ from .conftest import REPO
 MANAGED = REPO / "containers" / "managed-settings.json"
 RECIPE = REPO / "containers" / "claude-verify.def"
 HOOKS = "/opt/beethoven-research/hooks/"
-PYTHON = "/opt/beethoven-research/.pixi/envs/default/bin/python "
+PYTHON = "/opt/beethoven-research/.pixi/envs/default/bin/python -I "
 
 
 def _commands(settings: dict[str, object]) -> dict[str, list[dict[str, object]]]:

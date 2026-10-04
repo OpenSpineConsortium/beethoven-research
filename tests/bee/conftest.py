@@ -25,7 +25,13 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("BEETHOVEN_RUN_ROOT", raising=False)
     monkeypatch.delenv("BEE_ACCOUNT", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    for marker in ("CLAUDECODE", "BEETHOVEN_REQUEST_ID", "ASHLEY_REQUEST_ID", "SLURM_JOB_ID"):
+    for marker in (
+        "CLAUDECODE",
+        "BEETHOVEN_REQUEST_ID",
+        "ASHLEY_REQUEST_ID",
+        "SLURM_JOB_ID",
+        "SLURMD_NODENAME",
+    ):
         monkeypatch.delenv(marker, raising=False)
     monkeypatch.setenv("BEE_CLAUDE", str(FAKES / "claude"))
     monkeypatch.setenv("BEE_NOT_A_CLUSTER", "1")

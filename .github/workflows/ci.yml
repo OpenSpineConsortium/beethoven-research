@@ -81,13 +81,13 @@ jobs:
           printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/work"}' | \
             sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
               "$RUNNER_TEMP/claude-verify.sif" \
-              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+              /opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py
           rc=$?; set -e
           test "$rc" -eq 2 && echo "guard blocks (exit 2)" || { echo "guard answered $rc, expected 2"; exit 1; }
           printf '%s' '{"tool_name":"Bash","tool_input":{"command":"pytest -q"},"cwd":"/work"}' | \
             sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
               "$RUNNER_TEMP/claude-verify.sif" \
-              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+              /opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py
           echo "guard allows (exit 0)"
       - name: bee's hooks and grid script run against the image
         # The hooks exactly as the managed settings name them, with the events Claude Code would
@@ -97,7 +97,7 @@ jobs:
         run: |
           proj="$RUNNER_TEMP/proj"; mkdir -p "$proj"
           img="$RUNNER_TEMP/claude-verify.sif"
-          py=/opt/beethoven-research/.pixi/envs/default/bin/python
+          py="/opt/beethoven-research/.pixi/envs/default/bin/python -I"
           printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/claude/.credentials.json"},"cwd":"/work"}' | \
             sudo apptainer exec --containall --cleanenv --no-home --bind "$proj:/work" "$img" \
               $py /opt/beethoven-research/hooks/claudeignore.py | grep '"deny"'
@@ -107,9 +107,10 @@ jobs:
           sudo python3 -c "import json,sys; d=json.load(open(sys.argv[1])); \
             assert d['transcript_path']=='/claude/projects/-work/s1.jsonl' and d['account']=='ci', d; print('session record ok')" \
             "$proj/.claude/state/session.json"
-          sudo env SLURM_JOB_ID=ci USER=root HOME="$RUNNER_TEMP/home" BEE_IMAGE="$img" \
+          sudo env SLURM_JOB_ID=ci SLURMD_NODENAME=ci USER=root HOME="$RUNNER_TEMP/home" BEE_IMAGE="$img" \
             bash src/beethoven_research/bee/bee-grid.sh list | tee "$RUNNER_TEMP/bee-list.txt"
           grep -q "No accounts yet" "$RUNNER_TEMP/bee-list.txt"
-          test ! -e /tmp/root/bee_ci && echo "node-local temp removed"
+          if ls -d /tmp/root/bee_ci_* >/dev/null 2>&1; then echo "node-local temp left behind"; exit 1; fi
+          echo "node-local temp removed"
       - name: show what was built
         run: cat "$RUNNER_TEMP/claude-verify.digest"

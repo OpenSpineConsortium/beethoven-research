@@ -25,7 +25,7 @@ fi
   printf 'argv'
   printf ' [%s]' "$@"
   printf '\n'
-  for v in CLAUDE_CONFIG_DIR BEE_ACCOUNT BEETHOVEN_HANDOFF BEETHOVEN_HANDOFF_GATE \
+  for v in CLAUDE_CONFIG_DIR BEE_ACCOUNT BEETHOVEN_HANDOFF BEETHOVEN_HANDOFF_GATE BEE_THRESHOLD \
     ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
     printf 'env %s=%s\n' "$v" "${!v-<unset>}"
   done

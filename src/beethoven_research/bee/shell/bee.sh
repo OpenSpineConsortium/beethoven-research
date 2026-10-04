@@ -4,7 +4,8 @@
 #   . /path/to/beethoven-research/src/beethoven_research/bee/shell/bee.sh
 #
 #   bee <args>        the bee command, from the engine checkout's pixi environment
-#   bee-use <label>   switch this shell to an account: CLAUDE_CONFIG_DIR and BEE_ACCOUNT, nothing else
+#   bee-use <label>   switch this shell to an account: CLAUDE_CONFIG_DIR and BEE_ACCOUNT set, and
+#                     every credential variable (an API key, a token) unset
 #   bee-which         which account this shell is on
 #
 # Unlike the guide's helper this never sets CLAUDE_CONFIG_DIR to ~/.claude for the default
@@ -36,7 +37,9 @@ bee() {
   src="$BEE_ENGINE/src"
   # A Windows python under Git Bash reads C:\... paths, not /c/...
   if command -v cygpath >/dev/null 2>&1; then src="$(cygpath -w "$src")"; fi
-  PYTHONPATH="$src" "$py" -m beethoven_research.bee "$@"
+  # UTF-8 both ways: a Windows python writes a pipe in the ANSI code page otherwise, and a path
+  # with an accented letter would come back as another directory.
+  PYTHONIOENCODING=utf-8 PYTHONPATH="$src" "$py" -m beethoven_research.bee "$@"
 }
 
 bee-use() {

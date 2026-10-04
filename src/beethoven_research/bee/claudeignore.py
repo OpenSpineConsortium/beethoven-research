@@ -77,22 +77,26 @@ class Rule:
 @ensure(lambda result: "\n" not in result, "one expression")
 def glob_regex(pattern: str) -> str:
     """Translate one gitignore glob (already without ``!``, the leading and the trailing ``/``)
-    into a regular-expression body: ``*`` and ``?`` stop at ``/``, ``**`` crosses folders."""
+    into a regular-expression body: ``*`` and ``?`` stop at ``/``; ``**`` crosses folders only as
+    a whole segment, as in git (``foo**bar`` is ``foo*bar``)."""
     # crosshair: per_condition_timeout=3
     out: list[str] = []
     i = 0
     while i < len(pattern):
         c = pattern[i]
         if c == "*":
-            if pattern[i : i + 3] == "**/":
+            whole = pattern[i : i + 2] == "**" and (i == 0 or pattern[i - 1] == "/")
+            if whole and pattern[i : i + 3] == "**/":
                 out.append("(?:.*/)?")
                 i += 3
                 continue
-            if pattern[i : i + 2] == "**":
+            if whole and i + 2 == len(pattern):
                 out.append(".*")
                 i += 2
                 continue
             out.append("[^/]*")
+            while pattern[i + 1 : i + 2] == "*":  # a run of stars inside a segment is one star
+                i += 1
         elif c == "?":
             out.append("[^/]")
         elif c == "[":
@@ -101,7 +105,7 @@ def glob_regex(pattern: str) -> str:
                 out.append(re.escape(c))
             else:
                 body = pattern[i + 1 : j]
-                negated = body[:1] == "!"
+                negated = body[:1] in ("!", "^")
                 body = re.escape(body[1:] if negated else body).replace("\\-", "-")
                 out.append(("[^" if negated else "[") + body + "]")
                 i = j + 1
@@ -129,6 +133,8 @@ def compile_rules(text: str) -> tuple[Rule, ...]:
     rules: list[Rule] = []
     for raw in text.replace("\r\n", "\n").split("\n"):
         line = raw.rstrip()
+        if line.endswith("\\") and raw[len(line) : len(line) + 1] == " ":
+            line += " "  # "\ " keeps one trailing space, as in git
         if not line or line.startswith("#"):
             continue
         negate = line.startswith("!")
@@ -257,8 +263,9 @@ def decide(payload: dict[str, object], environ: dict[str, str] | None = None) ->
         candidates.append((os.path.normpath(target), folder_tool and os.path.isdir(target)))
     elif tool in ("Grep", "Glob", "LS"):
         candidates.append((cwd, True))
-    if tool == "Glob" and isinstance(tool_input.get("pattern"), str):
-        prefix = _literal_prefix(str(tool_input["pattern"]))
+    globbed = {"Glob": tool_input.get("pattern"), "Grep": tool_input.get("glob")}.get(str(tool))
+    if isinstance(globbed, str):
+        prefix = _literal_prefix(globbed)
         if prefix:
             base = candidates[0][0] if candidates else cwd
             candidates.append((os.path.normpath(os.path.join(base, prefix)), True))

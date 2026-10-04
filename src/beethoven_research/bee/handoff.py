@@ -263,20 +263,28 @@ def fingerprint(snap: Snapshot) -> str:
 
 
 # Secret-shaped text, by the published shapes of the tokens this project's people hold or could
-# paste (Anthropic, GitHub, AWS, Hugging Face, Slack, JWTs, PEM keys) and key=value assignments.
+# paste (Anthropic, OpenAI, GitHub, GitLab, AWS, Google, Hugging Face, Slack, Stripe, npm, JWTs,
+# PEM keys), credentials inside a URL, and assignments (DB_PASSWORD=..., "api_key": "...").
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
     re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}"),
     re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"),
     re.compile(r"\bhf_[A-Za-z0-9]{30,}"),
     re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"\b[rs]k_live_[A-Za-z0-9]{10,}"),
+    re.compile(r"\bnpm_[A-Za-z0-9]{36}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/\-]{20,}=*"),
 )
+_URL_CREDENTIALS = re.compile(r"(://[^/\s:@]+:)(?!\[redacted\])[^@\s/]+(@)")
+# The value must hold a letter, so a count such as max_tokens: 100000 stays.
 _ASSIGNMENT = re.compile(
-    r"(?i)\b((?:password|passwd|secret|token|api[_-]?key|access[_-]?key)\s*[:=]\s*)"
-    r"(?!\[redacted\])[^\s'\"`|]{6,}"
+    r"(?i)\b([A-Za-z0-9_]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[A-Za-z0-9_]*"
+    r"[\"']?\s*[:=]\s*[\"']?)(?!\[redacted\])(?=[^\s'\"`|]*[A-Za-z])[^\s'\"`|]{6,}"
 )
 REDACTED = "[redacted]"
 
@@ -292,6 +300,8 @@ def redact(text: str) -> tuple[str, int]:
     for pattern in _SECRET_PATTERNS:
         text, n = pattern.subn(REDACTED, text)
         count += n
+    text, n = _URL_CREDENTIALS.subn(lambda m: m.group(1) + REDACTED + m.group(2), text)
+    count += n
     text, n = _ASSIGNMENT.subn(lambda m: m.group(1) + REDACTED, text)
     return text, count + n
 
@@ -354,9 +364,12 @@ def parse_context(text: str) -> ContextReport:
     warnings: list[str] = []
     bodies: dict[int, list[str]] = {}
     current = 0
+    fenced = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("#"):
+        if stripped.startswith(("```", "~~~")):
+            fenced = not fenced  # a shell comment inside a fence is code, not a heading
+        elif not fenced and stripped.startswith("#"):
             title = stripped.lstrip("#").strip().strip("*").strip()
             number, by_number = _heading_section(title)
             if number:
@@ -573,9 +586,11 @@ def statusline_text(
     context_pct: int,
     threshold: int,
     color: bool,
+    step: str = "/handoff, then exit and run bee continue",
 ) -> str:
     """The status line: which account, its windows, how full the context is, and what to do at the
-    two thresholds (a negative percentage means Claude Code did not send that number)."""
+    two thresholds (a negative percentage means Claude Code did not send that number; ``step`` is
+    what to type at the hand-off threshold, in this machine's words)."""
 
     # crosshair: per_condition_timeout=3
     def paint(text: str, code: str) -> str:
@@ -594,7 +609,7 @@ def statusline_text(
         ctx = f"ctx {context_pct}%"
         parts.append(paint(ctx, "33") if context_pct >= COMPACT_HINT_PCT else ctx)
     if five_pct >= threshold:
-        parts.append(paint("/handoff, then exit and run bee continue", "31"))
+        parts.append(paint(_flat(step, 80), "31"))
     elif context_pct >= COMPACT_HINT_PCT:
         parts.append("/compact focus on: the open task and its errors")
     return " · ".join(parts)
@@ -771,7 +786,7 @@ def _validate_context(sdir: str, head: str) -> ContextReport | None:
         return parse_context(text)
     clean, hits = redact(text)
     if hits:
-        _write(path, clean)
+        _write(path, clean, private=True)
         mtime = os.path.getmtime(path)
     report = parse_context(clean)
     _write(
@@ -815,6 +830,20 @@ def _context_output(event: str, text: str) -> str:
     return json.dumps(body)
 
 
+def _has_handoff_command(project: str) -> bool:
+    return os.path.isfile(os.path.join(project, ".claude", "commands", "handoff.md"))
+
+
+def _continue_command(env: dict[str, str]) -> str:
+    # bee-grid.sh sets its own (the image has no `bee` for the person to type).
+    return _clip(env.get("BEE_CONTINUE_HINT") or "bee continue", 40)
+
+
+def _next_step(project: str, env: dict[str, str]) -> str:
+    write = "/handoff" if _has_handoff_command(project) else "ask for the hand-off file"
+    return f"{write}, then exit and run {_continue_command(env)}"
+
+
 def _session_start(payload: dict[str, object], env: dict[str, str]) -> str:
     project = _project(payload, env)
     sdir = state_dir(project, env)
@@ -847,9 +876,10 @@ def _session_start(payload: dict[str, object], env: dict[str, str]) -> str:
     )
     _prompts(sdir)
     _refresh(project, env, force=True)
+    shortcut = "; /handoff does it" if _has_handoff_command(project) else ""
     note = (
         f"Beethoven hand-off: this session's hand-off file is {os.path.join(sdir, CONTEXT_FILE)} "
-        f"(how to write it: {os.path.join(sdir, EXTRACT_FILE)}; /handoff does it)."
+        f"(how to write it: {os.path.join(sdir, EXTRACT_FILE)}{shortcut})."
     )
     handoff_start = source == "startup" and env.get("BEETHOVEN_HANDOFF") == "1"
     if source in ("resume", "compact", "fork") or handoff_start:
@@ -888,9 +918,10 @@ def _pre_compact(payload: dict[str, object], env: dict[str, str]) -> str:
 
 
 def _stop(payload: dict[str, object], env: dict[str, str]) -> str:
-    if env.get("BEETHOVEN_HANDOFF_GATE") != "1":
-        return ""  # no gate, no work: Stop fires after every turn
     project = _project(payload, env)
+    _retire_limit(state_dir(project, env), str(payload.get("session_id") or ""))
+    if env.get("BEETHOVEN_HANDOFF_GATE") != "1":
+        return ""  # no gate, no more work: Stop fires after every turn
     sdir = state_dir(project, env)
     _ensure_dir(sdir)
     head = git_snapshot(project).head
@@ -925,6 +956,19 @@ def _stop(payload: dict[str, object], env: dict[str, str]) -> str:
     )
 
 
+def _retire_limit(sdir: str, session: str) -> None:
+    """Stop fires only on a turn that finished, so a limit this session recorded is over: Claude
+    Code waited out the window, or the person typed again after it reset. Left in place, it would
+    bench the account at the next bee run and offer a switch for a limit long gone."""
+    path = os.path.join(sdir, LIMIT_FILE)
+    if not session or not os.path.isfile(path):
+        return  # reads only; Stop must not make a state folder in every project
+    limit = _read_json(path)
+    if limit and not limit.get("handled") and limit.get("session_id") == session:
+        limit["handled"] = f"{_utc()} the session went on"
+        _write(path, json.dumps(limit, indent=2) + "\n", private=True)
+
+
 def _stop_failure(payload: dict[str, object], env: dict[str, str]) -> str:
     project = _project(payload, env)
     sdir = _refresh(project, env, force=True)
@@ -938,6 +982,10 @@ def _stop_failure(payload: dict[str, object], env: dict[str, str]) -> str:
     if error != "rate_limit":
         return ""
     usage = _read_json(os.path.join(sdir, USAGE_FILE))
+    if usage.get("session_id") != payload.get("session_id") or usage.get("label") != label:
+        # Another session's reading (the account before, in this project): its reset times are
+        # not this account's, so the rest falls back to a whole window.
+        usage = {}
     record = {
         "account": label,
         "session_id": payload.get("session_id"),
@@ -951,7 +999,7 @@ def _stop_failure(payload: dict[str, object], env: dict[str, str]) -> str:
     }
     _write(os.path.join(sdir, LIMIT_FILE), json.dumps(record, indent=2) + "\n", private=True)
     who = f"the account {label}" if label else "this account"
-    note = f"Beethoven: {who} reached its usage limit. Exit, then run bee continue."
+    note = f"Beethoven: {who} reached its usage limit. Exit, then run {_continue_command(env)}."
     return json.dumps({"terminalSequence": f"\033]9;{note}\007"})
 
 
@@ -1000,10 +1048,14 @@ def _statusline(payload: dict[str, object], env: dict[str, str]) -> str:
             )
             targets.append(os.path.join(registry, "usage", f"{label}.json"))
         for target in targets:
-            if _read(target) == text:
-                continue
-            os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
-            _write(target, text, private=True)
+            try:
+                if _read(target) == text:
+                    continue
+                os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+                _write(target, text, private=True)
+            except OSError as exc:
+                # The reading is a record; the line is what the person sees. Keep the line.
+                _log_error(project, env, "statusline", exc)
     resets = ""
     if five_reset:
         resets = _dt.datetime.fromtimestamp(five_reset).strftime("%H:%M")
@@ -1015,6 +1067,7 @@ def _statusline(payload: dict[str, object], env: dict[str, str]) -> str:
         ctx,
         _int(env.get("BEE_THRESHOLD"), DEFAULT_THRESHOLD),
         color=env.get("NO_COLOR") is None,
+        step=_next_step(project, env),
     )
 
 
@@ -1057,7 +1110,7 @@ def install_context(sdir: str, text: str) -> tuple[ContextReport, int]:
     old = _read(path)
     if old is not None:
         _write(os.path.join(sdir, "claude_context.prev.md"), old)
-    _write(path, clean)
+    _write(path, clean, private=True)
     _append(os.path.join(sdir, LOG_FILE), f"{_utc()} import bytes={len(clean)} redacted={hits}")
     return parse_context(clean), hits
 
@@ -1109,16 +1162,20 @@ def main(argv: list[str], stdin: _TextStream, stdout: _TextStream) -> int:
         if out:
             stdout.write(out + "\n")
     except Exception as exc:  # noqa: BLE001 - upkeep is best effort; the session goes on
-        try:
-            sdir = state_dir(_project(payload, env), env)
-            _ensure_dir(sdir)
-            _append(
-                os.path.join(sdir, ERROR_LOG),
-                f"{_utc()} {name or '-'}: {exc.__class__.__name__}: {_clip(str(exc), 300)}",
-            )
-        except Exception:  # noqa: BLE001, S110 - nowhere left to write; stay silent and let it run
-            pass
+        _log_error(_project(payload, env), env, name, exc)
     return 0
+
+
+def _log_error(project: str, env: dict[str, str], name: str, exc: Exception) -> None:
+    try:
+        sdir = state_dir(project, env)
+        _ensure_dir(sdir)
+        _append(
+            os.path.join(sdir, ERROR_LOG),
+            f"{_utc()} {name or '-'}: {exc.__class__.__name__}: {_clip(str(exc), 300)}",
+        )
+    except Exception:  # noqa: BLE001, S110 - nowhere left to write; stay silent and let it run
+        pass
 
 
 if __name__ == "__main__":

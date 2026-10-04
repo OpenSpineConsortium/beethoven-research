@@ -19,8 +19,11 @@ Anthropic's marks, used here to say what it runs.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import datetime as _dt
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -92,6 +95,18 @@ against the disk before you trust it, verify the blockers, then act. $ARGUMENTS
 """
 ENVRC_BEGIN = "# >>> bee account (written by bee account pin) >>>"
 ENVRC_END = "# <<< bee account <<<"
+INIT_RECORD = "init.json"  # the deny rules bee init made from .claudeignore, in the state folder
+# continue --fork believes the recorded transcript only for a file named after the recorded session
+# in its account's own projects folder: the record sits in the project, which a session can write.
+_SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
+# Project settings that would point a session at a key, a helper that prints one, or a cloud
+# provider, instead of the person's own subscription (usage credits are never used).
+_PROJECT_CREDENTIAL_KEYS = (
+    "apiKeyHelper",
+    "awsCredentialExport",
+    "awsAuthRefresh",
+    "gcpAuthRefresh",
+)
 
 
 class Refusal(Exception):
@@ -166,6 +181,11 @@ def _cmd_add(args: argparse.Namespace) -> int:
         path = acc.prepare_account_dir(label)
     if path in [a.path for a in accounts]:
         raise Refusal(f"that directory is already the account {_owner(accounts, path)}")
+    same = [a.label for a in accounts if path and a.path and _same_dir(a.path, path)]
+    if same:
+        # main is a link to the launcher's sign-in; listing that under a second label would hand a
+        # spent window to itself.
+        raise Refusal(f"that directory is already the account {same[0]} (through a link)")
     accounts = acc.add_account(accounts, label, path)
     acc.save_accounts(directory, accounts)
     where = path or "Claude Code's default place (CLAUDE_CONFIG_DIR unset)"
@@ -174,6 +194,18 @@ def _cmd_add(args: argparse.Namespace) -> int:
         _say(f"Sign it in when you are ready: bee account login {label}")
         return 0
     return _login(_find(accounts, label))
+
+
+def _same_dir(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _epoch(text: str) -> int | None:
+    try:
+        stamp = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return int(stamp.timestamp()) if stamp.tzinfo else None
 
 
 def _owner(accounts: tuple[acc.Account, ...], path: str | None) -> str:
@@ -291,9 +323,15 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     return 0
 
 
+def _switch_pairs(account: acc.Account) -> tuple[tuple[str, str | None], ...]:
+    """The account's two variables and every credential variable unset: a plain ``claude`` after
+    bee-use or a pinned .envrc runs on that directory's sign-in, not on a token left behind."""
+    return acc.env_pairs(account) + tuple((name, None) for name in acc.CREDENTIAL_VARS)
+
+
 def _cmd_env(args: argparse.Namespace) -> int:
     _, accounts = _registry()
-    sys.stdout.write(acc.render_env(acc.env_pairs(_find(accounts, args.label)), args.shell))
+    sys.stdout.write(acc.render_env(_switch_pairs(_find(accounts, args.label)), args.shell))
     return 0
 
 
@@ -365,7 +403,7 @@ def _cmd_pin(args: argparse.Namespace, pin: bool) -> int:
     kept = kept.rstrip("\n") + "\n" if kept.strip() else ""  # the separator goes with the block
     if pin:
         _, accounts = _registry()
-        lines = acc.render_env(acc.env_pairs(_find(accounts, args.label)), "posix")
+        lines = acc.render_env(_switch_pairs(_find(accounts, args.label)), "posix")
         kept = (kept + "\n" if kept else "") + (f"{ENVRC_BEGIN}\n{lines}{ENVRC_END}\n")
     with open(envrc, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(kept)
@@ -388,6 +426,13 @@ def _strip_block(text: str) -> str:
             continue
         if not inside:
             out.append(line)
+    if inside:
+        # Without its closing line the block would run to the end and take the person's own
+        # lines with it; .envrc is theirs, so it is left as it is.
+        raise Refusal(
+            f"the .envrc has bee's opening line but not its closing line ({ENVRC_END}); "
+            "fix it by hand first"
+        )
     return "".join(out)
 
 
@@ -414,10 +459,18 @@ def _absorb_limit(
         value = limit.get(key)
         return value if isinstance(value, int) else 0
 
-    until = acc.hibernate_until(
-        t, num("five_hour_resets_at"), num("seven_day_pct"), num("seven_day_resets_at")
-    )
-    accounts = acc.set_hibernation(accounts, label, until)
+    hit = min(_epoch(str(limit.get("at") or "")) or t, t)
+    weekly = num("seven_day_pct")
+    if num("five_hour_pct") < acc.DEFAULT_THRESHOLD_PCT <= weekly:
+        # The five-hour window was nowhere near its end, so the week is what ran out; the last
+        # reading before the hit is often 98 or 99 after rounding.
+        weekly = 100
+    # The rest counts from the hit, not from now: a record nobody acted on for a day must not
+    # bench an account whose window reset long ago.
+    until = acc.hibernate_until(hit, num("five_hour_resets_at"), weekly, num("seven_day_resets_at"))
+    if until <= t:
+        return accounts, ""  # long over: the account is no longer the one that ran out
+    accounts = acc.set_hibernation(acc.load_accounts(directory), label, until)
     acc.save_accounts(directory, accounts)
     acc.log_switch(directory, f"{acc.utc_text(t)} limit account={label} rest-until={_when(until)}")
     _say(f"{label} reached its usage limit; it rests until {_when(until)}.")
@@ -473,7 +526,9 @@ def _quarantine(
 ) -> tuple[acc.Account, ...]:
     """claude-swap's quarantine, by the one read the rule allows: an account that does not answer
     as signed in leaves the rotation and is reported; nothing is repaired or signed out."""
-    accounts = acc.set_enabled(accounts, label, False)
+    # Re-read just before the write: another bee may have changed the list while the sign-in was
+    # being asked about.
+    accounts = acc.set_enabled(acc.load_accounts(directory), label, False)
     acc.save_accounts(directory, accounts)
     acc.log_switch(directory, f"{acc.utc_text(acc.now())} quarantine account={label} {reason}")
     _say(f"{label}: {reason}; taken out of the rotation (bee account login {label}).")
@@ -483,7 +538,8 @@ def _quarantine(
 @dataclass(frozen=True)
 class _Plan:
     """Who takes the next session and how: ``run`` (no hand-off), ``file`` (hydrate from the
-    hand-off file) or ``fork`` (resume the last transcript under the new account)."""
+    hand-off file) or ``fork`` (resume the last transcript under the new account, ``owner_dir``
+    being the directory of the account that wrote it)."""
 
     target: acc.Account
     mode: str
@@ -491,16 +547,83 @@ class _Plan:
     transcript: str
     prompt: str
     session_id: str
+    owner_dir: str = ""
+
+
+def _project_credential_settings(project: str) -> list[str]:
+    """Where the project's own Claude Code settings would take a session off the person's own
+    subscription. Names only; a value is never read out or printed."""
+    found: list[str] = []
+    for name in ("settings.json", "settings.local.json"):
+        try:
+            with open(os.path.join(project, ".claude", name), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        found += [f".claude/{name}: {k}" for k in _PROJECT_CREDENTIAL_KEYS if k in data]
+        env = data.get("env")
+        if isinstance(env, dict):
+            found += [f".claude/{name}: env {k}" for k in acc.CREDENTIAL_VARS if k in env]
+    return found
+
+
+def _fork_source(session: dict[str, object], accounts: tuple[acc.Account, ...]) -> tuple[str, str]:
+    """For continue --fork: the last session's transcript as this machine sees it, and the
+    directory of the account that wrote it. Anything but that account's own session file (a
+    sign-in file, a key under $HOME) is refused, never bound or resumed."""
+    instead = "continue from the hand-off file instead (bee continue without --fork)"
+    raw = str(session.get("transcript_path") or "")
+    if not raw:
+        raise Refusal(f"the last session's transcript was not recorded; {instead}")
+    sid = str(session.get("session_id") or "")
+    owner = next((a for a in accounts if a.label == session.get("account")), None)
+    if owner is None or not _SESSION_ID.fullmatch(sid):
+        raise Refusal(
+            f"the last session's record names none of your accounts or no session; {instead}"
+        )
+    name = f"{sid}.jsonl"
+    stray = f"the recorded transcript is not a session file of {owner.label}; {instead}"
+    if raw.startswith("/claude/"):
+        # Recorded inside the image, where the account's directory is bound at /claude.
+        parts = raw.split("/")
+        if (
+            owner.path is None
+            or len(parts) != 5
+            or parts[2] != "projects"
+            or parts[3] in ("", ".", "..")
+            or parts[4] != name
+        ):
+            raise Refusal(stray)
+        return acc.host_transcript(raw, owner.path), owner.path
+    home = owner.path or os.path.expanduser("~/.claude")
+    real = os.path.realpath(raw)
+    folder = os.path.normcase(os.path.realpath(os.path.join(home, "projects")))
+    if (
+        os.path.normcase(os.path.basename(real)) != os.path.normcase(name)
+        or os.path.normcase(os.path.dirname(os.path.dirname(real))) != folder
+    ):
+        raise Refusal(stray)
+    return real, home
 
 
 def _plan(args: argparse.Namespace, project: str, hydrate: bool, fork: bool, check: Check) -> _Plan:
     directory, accounts = _registry()
     if not accounts:
         raise Refusal("no accounts yet; bee account add main")
+    found = _project_credential_settings(project)
+    if found:
+        raise Refusal(
+            "this project's Claude Code settings would run the session on a key or a cloud "
+            f"provider instead of your own subscription ({'; '.join(found)}); remove them first"
+        )
     accounts, limited = _absorb_limit(project, directory, accounts)
     sdir = handoff.refresh_state(project) if hydrate or fork else handoff.state_dir(project)
     session = handoff.read_record(sdir, handoff.SESSION_FILE)
-    current = limited or os.environ.get("BEE_ACCOUNT") or str(session.get("account") or "")
+    shell, last = os.environ.get("BEE_ACCOUNT") or "", str(session.get("account") or "")
+    # continue leaves the account the last session ran on; run starts on the shell's own choice.
+    current = limited or ((last or shell) if hydrate or fork else (shell or last))
     label = args.label
     if not hydrate and not fork and not label:
         # bee run with no label: the current account if it may run, else the first that may.
@@ -510,18 +633,9 @@ def _plan(args: argparse.Namespace, project: str, hydrate: bool, fork: bool, che
     accounts, target = _target(
         label, args.strategy, args.threshold, directory, accounts, away, check
     )
-    transcript, prompt, mode = "", "", "run"
+    transcript, owner_dir, prompt, mode = "", "", "", "run"
     if fork:
-        transcript = str(session.get("transcript_path") or "")
-        owner = next((a for a in accounts if a.label == session.get("account")), None)
-        if transcript.startswith("/claude/") and owner is not None and owner.path:
-            # Recorded inside the image, where the account's directory is bound at /claude.
-            transcript = acc.host_transcript(transcript, owner.path)
-        if not transcript:
-            raise Refusal(
-                "the last session's transcript was not recorded; continue from the hand-off file "
-                "instead (bee continue without --fork)"
-            )
+        transcript, owner_dir = _fork_source(session, accounts)
         prompt = f"Continue where you stopped; this session now runs as {target.label}."
         mode = "fork"
     elif hydrate:
@@ -537,7 +651,9 @@ def _plan(args: argparse.Namespace, project: str, hydrate: bool, fork: bool, che
         f"{acc.utc_text(acc.now())} {mode} from={current or '-'} to={target.label} "
         f"project={project} previous-session={session.get('session_id') or '-'}",
     )
-    return _Plan(target, mode, current, transcript, prompt, str(session.get("session_id") or ""))
+    return _Plan(
+        target, mode, current, transcript, prompt, str(session.get("session_id") or ""), owner_dir
+    )
 
 
 def _launch(argv: list[str], env: dict[str, str]) -> int:
@@ -550,11 +666,14 @@ def _launch(argv: list[str], env: dict[str, str]) -> int:
         signal.signal(signal.SIGINT, previous)
 
 
-def _session_env(target: acc.Account, gate: bool, hydrate: bool) -> dict[str, str]:
+def _session_env(
+    target: acc.Account, gate: bool, hydrate: bool, threshold: int = acc.DEFAULT_THRESHOLD_PCT
+) -> dict[str, str]:
     env = acc.clean_child_env(dict(os.environ))
     for name, value in acc.env_pairs(target):
         if value is not None:
             env[name] = value
+    env["BEE_THRESHOLD"] = str(threshold)  # the status line and the Stop gate use the same one
     if gate:
         env["BEETHOVEN_HANDOFF_GATE"] = "1"
     if hydrate:
@@ -607,7 +726,7 @@ def _run_loop(args: argparse.Namespace, hydrate_first: bool) -> int:
         argv += list(args.claude_args or [])
         _say(f"Starting Claude Code as {plan.target.label} ({plan.mode}) in {project}")
         started = float(acc.now()) - 1
-        env = _session_env(plan.target, gate=not args.no_gate, hydrate=plan.mode == "file")
+        env = _session_env(plan.target, not args.no_gate, plan.mode == "file", args.threshold)
         rc = _launch(argv, env)
         if args.once or not _offer_next(project, started, plan.target.label):
             return rc
@@ -626,12 +745,22 @@ def _cmd_continue(args: argparse.Namespace) -> int:
 def _cmd_plan(args: argparse.Namespace) -> int:
     """The grid's first step (bee-grid.sh): choose the account and the mode inside the image,
     where no sign-in directory is bound, and print one tab-separated line for the script:
-    label, host directory, mode, host transcript (fork), prompt."""
+    label, host directory, mode, host transcript (fork), prompt, host directory of the account
+    that wrote the transcript (fork). Notes go to stderr, so stdout is that one line."""
     project = _project(args.project)
     hydrate = args.mode == "continue" and not args.fork
-    plan = _plan(args, project, hydrate, args.fork, None)
-    fields = (plan.target.label, plan.target.path or "", plan.mode, plan.transcript, plan.prompt)
-    sys.stdout.write("\t".join(f.replace("\t", " ").replace("\n", " ") for f in fields) + "\n")
+    out = sys.stdout
+    with contextlib.redirect_stdout(sys.stderr):
+        plan = _plan(args, project, hydrate, args.fork, None)
+    fields = (
+        plan.target.label,
+        plan.target.path or "",
+        plan.mode,
+        plan.transcript,
+        plan.prompt,
+        plan.owner_dir,
+    )
+    out.write("\t".join(f.replace("\t", " ").replace("\n", " ") for f in fields) + "\n")
     return 0
 
 
@@ -769,10 +898,32 @@ def _cmd_init(args: argparse.Namespace) -> int:
     deny = perms.setdefault("deny", [])
     if not isinstance(deny, list):
         raise Refusal("the settings file's permissions.deny is not a list; fix it by hand")
-    base = ["Read(**/.credentials.json)", "Read(./.env)", "Read(./.env.*)"]
+    # The sign-in files sit outside the project, so the rules name them absolutely (//) and from
+    # home (~/); a bare pattern is relative to the folder Claude Code runs in.
+    base = [
+        "Read(//**/.credentials.json)",
+        "Read(~/.claude/.credentials.json)",
+        "Read(~/.beethoven/**/.credentials.json)",
+        "Read(**/.credentials.json)",
+        "Read(./.env)",
+        "Read(./.env.*)",
+    ]
+    # Rules made from .claudeignore last time and gone from it now are taken back out, so a
+    # pattern removed or re-included with ! is readable again.
+    sdir = handoff.state_dir(project)
+    before = handoff.read_record(sdir, INIT_RECORD).get("deny")
+    stale = [r for r in before if r not in rules] if isinstance(before, list) else []
+    deny[:] = [r for r in deny if r not in stale]
     new_rules = [r for r in [*base, *rules] if r not in deny]
     deny.extend(new_rules)
-    set_status = "statusLine" not in settings or args.statusline
+    handoff.write_record(sdir, INIT_RECORD, {"deny": list(rules)})
+    try:
+        with open(os.path.join(claude_dir, "settings.json"), encoding="utf-8") as fh:
+            shared_status = "statusLine" in json.load(fh)
+    except (OSError, ValueError, TypeError):
+        shared_status = False
+    has_status = "statusLine" in settings or shared_status
+    set_status = not args.no_statusline and (not has_status or args.statusline)
     if set_status:
         settings["statusLine"] = {
             "type": "command",
@@ -784,28 +935,42 @@ def _cmd_init(args: argparse.Namespace) -> int:
         fh.write("\n")
     _exclude_local(project)
     _say(
-        f"{settings_path}: {added} hooks added, {len(new_rules)} deny rules added, status line "
+        f"{settings_path}: {added} hooks added, {len(new_rules)} deny rules added"
+        f"{f', {len(stale)} taken back' if stale else ''}, status line "
         f"{'set' if set_status else 'kept as it was'}. Start with: bee run <label>"
     )
+    if set_status:
+        _say(
+            "A status line of your own in your user settings is replaced by bee's in this "
+            "project; bee init --no-statusline keeps yours."
+        )
     return 0
 
 
 def _exclude_local(project: str) -> None:
     """Keep ``settings.local.json`` and the state folder out of git through ``.git/info/exclude``
     (the checkout's own, never the shared ``.gitignore``)."""
-    try:
-        top = subprocess.run(
-            ["git", "-C", project, "rev-parse", "--git-dir"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+
+    def ask(*words: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", "-C", project, "rev-parse", *words],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return out.stdout.strip() if out.returncode == 0 else None
+
+    # A linked worktree reads info/exclude only from the common folder, and a project in a
+    # subfolder needs its patterns anchored there (git before 2.5 has no --git-common-dir).
+    common = ask("--git-common-dir")
+    git_dir = common if common and not common.startswith("--") else ask("--git-dir")
+    prefix = ask("--show-prefix")
+    if git_dir is None or prefix is None:
         return
-    if top.returncode != 0:
-        return
-    git_dir = top.stdout.strip()
     exclude = os.path.join(project, git_dir, "info", "exclude")
     os.makedirs(os.path.dirname(exclude), exist_ok=True)
     try:
@@ -813,13 +978,30 @@ def _exclude_local(project: str) -> None:
             text = fh.read()
     except FileNotFoundError:
         text = ""
-    lines = [x for x in (".claude/settings.local.json", ".claude/state/") if x not in text]
+    wanted = (f"/{prefix}.claude/settings.local.json", f"/{prefix}.claude/state/")
+    lines = [x for x in wanted if x not in text.splitlines()]
     if lines:
         with open(exclude, "a", encoding="utf-8", newline="\n") as fh:
             fh.write("\n# Beethoven (bee init)\n" + "\n".join(lines) + "\n")
 
 
 # --- the parser ----------------------------------------------------------------------------------
+
+
+def _threshold(text: str) -> int:
+    value = int(text)
+    if not acc.DEFAULT_HYSTERESIS_PCT < value <= 100:
+        raise argparse.ArgumentTypeError(
+            f"a percentage above {acc.DEFAULT_HYSTERESIS_PCT} and at most 100"
+        )
+    return value
+
+
+def _hours(text: str) -> float:
+    value = float(text)
+    if not 0 < value <= 24 * 30:
+        raise argparse.ArgumentTypeError("more than 0 and at most 720 hours")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -872,11 +1054,11 @@ def _parser() -> argparse.ArgumentParser:
     x = asub.add_parser("next", help="print the account that would take over next")
     x.add_argument("--from", dest="from_label", default="")
     x.add_argument("--strategy", choices=["order", "best", "consume-first"], default="order")
-    x.add_argument("--threshold", type=int, default=acc.DEFAULT_THRESHOLD_PCT)
+    x.add_argument("--threshold", type=_threshold, default=acc.DEFAULT_THRESHOLD_PCT)
     x.set_defaults(func=_cmd_next)
     x = asub.add_parser("spent", help="rest an account until its window resets")
     x.add_argument("label")
-    x.add_argument("--hours", type=float)
+    x.add_argument("--hours", type=_hours)
     x.set_defaults(func=_cmd_spent)
     x = asub.add_parser("rested", help="wake a resting account")
     x.add_argument("label")
@@ -896,7 +1078,7 @@ def _parser() -> argparse.ArgumentParser:
         x.add_argument("label", nargs="?", default="")
         x.add_argument("--project")
         x.add_argument("--strategy", choices=["order", "best", "consume-first"], default="order")
-        x.add_argument("--threshold", type=int, default=acc.DEFAULT_THRESHOLD_PCT)
+        x.add_argument("--threshold", type=_threshold, default=acc.DEFAULT_THRESHOLD_PCT)
         x.add_argument("--no-gate", action="store_true", help="no Stop-hook reminders")
         x.add_argument("--once", action="store_true", help="do not offer the next account")
         if name == "continue":
@@ -913,7 +1095,7 @@ def _parser() -> argparse.ArgumentParser:
     x.add_argument("--project")
     x.add_argument("--fork", action="store_true")
     x.add_argument("--strategy", choices=["order", "best", "consume-first"], default="order")
-    x.add_argument("--threshold", type=int, default=acc.DEFAULT_THRESHOLD_PCT)
+    x.add_argument("--threshold", type=_threshold, default=acc.DEFAULT_THRESHOLD_PCT)
     x.set_defaults(func=_cmd_plan)
 
     h = sub.add_parser("handoff", help="the hand-off file")
@@ -942,6 +1124,9 @@ def _parser() -> argparse.ArgumentParser:
     x.add_argument("--project")
     x.add_argument("--engine", help="the engine checkout whose hooks to use")
     x.add_argument("--statusline", action="store_true", help="replace an existing status line")
+    x.add_argument(
+        "--no-statusline", action="store_true", help="leave the status line to your own settings"
+    )
     x.set_defaults(func=_cmd_init)
     return p
 
@@ -953,9 +1138,8 @@ def main(argv: list[str] | None = None) -> int:
     # crosshair: off
     words = list(sys.argv[1:] if argv is None else argv)
     tail: list[str] = []
-    if (
-        "--" in words
-    ):  # split here, not in argparse: a REMAINDER after an optional label eats options
+    # Split here, not in argparse: a REMAINDER after an optional label eats options.
+    if "--" in words:
         cut = words.index("--")
         words, tail = words[:cut], words[cut + 1 :]
     args = _parser().parse_args(words)

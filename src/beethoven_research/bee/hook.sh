@@ -8,6 +8,8 @@
 # It runs the hook with the checkout's own pixi environment (Linux and macOS: bin/python; Windows,
 # where Claude Code runs hooks under Git Bash: python.exe). Without that environment it drains the
 # event and steps aside, so a project set up by `bee init` never breaks when the engine is missing.
+# Python runs isolated (-I): the hooks stand alone, and no PYTHONPATH or project file can shadow a
+# module they import.
 # Inside the image the managed settings name the baked copies instead (containers/).
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,8 +18,8 @@ name="${1:-}"
 for py in "$engine/.pixi/envs/default/bin/python" "$engine/.pixi/envs/default/python.exe"; do
   if [ -f "$py" ]; then
     case "$name" in
-      claudeignore) exec "$py" "$here/claudeignore.py" ;;
-      *) exec "$py" "$here/handoff.py" "$name" ;;
+      claudeignore) exec "$py" -I "$here/claudeignore.py" ;;
+      *) exec "$py" -I "$here/handoff.py" "$name" ;;
     esac
   fi
 done

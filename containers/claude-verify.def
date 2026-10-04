@@ -66,16 +66,16 @@ From: ubuntu:24.04
         /opt/beethoven-research/hooks/handoff.py /opt/beethoven-research/hooks/claudeignore.py
     python3 -c "import json; json.load(open('/etc/claude-code/managed-settings.json'))"
     printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/work"}' \
-        | CLAUDE_CONFIG_DIR=/claude /opt/beethoven-research/.pixi/envs/default/bin/python \
+        | CLAUDE_CONFIG_DIR=/claude /opt/beethoven-research/.pixi/envs/default/bin/python -I \
             /opt/beethoven-research/hooks/guard.py && exit 1 || test $? -eq 2
     # bee's hooks start with the image's python: the ignore hook refuses the sign-in file, and a
     # state hook answers exit 0 even with nowhere to write (state upkeep never stops a session).
     printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/x/.credentials.json"},"cwd":"/"}' \
-        | /opt/beethoven-research/.pixi/envs/default/bin/python \
+        | /opt/beethoven-research/.pixi/envs/default/bin/python -I \
             /opt/beethoven-research/hooks/claudeignore.py | grep -q '"deny"'
     hookdir="$(mktemp -d)"
     printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":"%s"}' \
-        "$hookdir" | /opt/beethoven-research/.pixi/envs/default/bin/python \
+        "$hookdir" | /opt/beethoven-research/.pixi/envs/default/bin/python -I \
             /opt/beethoven-research/hooks/handoff.py session-start | grep -q additionalContext
     test -f "$hookdir/.claude/state/session.json"
     rm -rf "$hookdir"

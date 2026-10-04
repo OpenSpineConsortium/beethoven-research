@@ -311,6 +311,9 @@ def _candidates(
 @require(lambda strategy: strategy in STRATEGIES, "a known strategy")
 @require(lambda threshold: 1 <= threshold <= 100, "a percentage")
 @require(lambda hysteresis, threshold: 0 <= hysteresis < threshold, "a margin below the threshold")
+# "" is the answer "none can"; AccountRecord's pattern already keeps it out of the list, and
+# CrossHair showed that without this line an unnamed account reads as no account at all.
+@require(lambda accounts: all(a.label != "" for a in accounts), "every account has a label")
 @ensure(
     lambda result, accounts, current, now, usage, threshold, hysteresis: (
         (result == "")
@@ -740,18 +743,23 @@ def log_switch(directory: str, line: str) -> None:
 @ensure(lambda result: result == "" or "login node" in result, "empty, or a refusal that says why")
 def login_node_refusal(environ: dict[str, str] | None = None) -> str:
     """Why Claude Code must not start here, or "": on a cluster's login node (a scheduler on the
-    path and no job) nothing of ours runs beyond one scheduler call (grid etiquette)."""
+    path and no job step) nothing of ours runs beyond one scheduler call (grid etiquette)."""
     # crosshair: off
     env = dict(os.environ) if environ is None else environ
-    if env.get("SLURM_JOB_ID") or env.get("PBS_JOBID") or env.get("LSB_JOBID"):
+    # An salloc shell has SLURM_JOB_ID and still runs on the login node; slurmd names the node only
+    # for a step it started there (srun, or a batch script).
+    if env.get("SLURM_JOB_ID") and env.get("SLURMD_NODENAME"):
+        return ""
+    if env.get("PBS_JOBID") or env.get("LSB_JOBID"):
         return ""
     if env.get("BEE_NOT_A_CLUSTER") == "1":
         return ""
     for tool in ("sbatch", "qsub", "bsub"):
         if shutil.which(tool, path=env.get("PATH")):
             return (
-                f"this looks like a cluster login node ({tool} is on the path and no job is "
-                "running); Claude Code runs on a compute node, inside a job (bee-grid.sh)"
+                f"this looks like a cluster login node ({tool} is on the path and no job step "
+                "runs here; an salloc shell stays on the login node); Claude Code runs on a "
+                "compute node, in a shell from srun --pty (bee-grid.sh)"
             )
     return ""
 

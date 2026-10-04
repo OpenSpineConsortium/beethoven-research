@@ -3,7 +3,8 @@
 #   . C:\path\to\beethoven-research\src\beethoven_research\bee\shell\bee.ps1
 #
 #   bee <args>          the bee command, from the engine checkout's pixi environment
-#   bee-use <label>     switch this shell to an account: CLAUDE_CONFIG_DIR and BEE_ACCOUNT only
+#   bee-use <label>     switch this shell to an account: CLAUDE_CONFIG_DIR and BEE_ACCOUNT set,
+#                       every credential variable (an API key, a token) removed
 #   bee-which           which account this shell is on
 #
 # For the default account it removes CLAUDE_CONFIG_DIR rather than pointing it at ~\.claude
@@ -23,11 +24,19 @@ function bee {
         return
     }
     $saved = $env:PYTHONPATH
+    $savedIo = $env:PYTHONIOENCODING
+    $savedOut = [Console]::OutputEncoding
     $env:PYTHONPATH = Join-Path $script:BeeEngine 'src'
+    # UTF-8 both ways: otherwise python writes the ANSI code page and PowerShell reads the OEM one,
+    # and a path with an accented letter comes back as another directory.
+    $env:PYTHONIOENCODING = 'utf-8'
+    [Console]::OutputEncoding = [Text.Encoding]::UTF8
     try {
         & $py -m beethoven_research.bee @args
     } finally {
         $env:PYTHONPATH = $saved
+        $env:PYTHONIOENCODING = $savedIo
+        [Console]::OutputEncoding = $savedOut
     }
 }
 
