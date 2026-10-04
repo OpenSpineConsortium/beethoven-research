@@ -1,0 +1,16 @@
+{
+  "_comment": "MCP servers a Claude Code session in this repository may use. Nothing here is a secret: Linear's server authenticates by OAuth in the browser, and the GitHub token is read from the environment at start. Never put a token in this file.",
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+      }
+    }
+  }
+}

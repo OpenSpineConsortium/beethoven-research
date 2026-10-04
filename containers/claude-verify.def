@@ -1,0 +1,75 @@
+# The engine's hermetic image: Node 22 + the Claude Code CLI + this repository's pixi environment,
+# reconstructed from pixi.lock. Built with containers/build.sh (apptainer build --fakeroot, on a
+# compute node, never the login node) and always run with --containall --cleanenv --no-home, so a
+# job sees nothing of the host's environment or home beyond what it binds on purpose.
+#
+# What the image never contains: a Claude credential, an API key, a token of any kind. The student's
+# own sign-in directory is bound read-only at run time and named by CLAUDE_CONFIG_DIR, exactly as
+# the launcher's worker does; the image only provides the binaries. The engine's own code is also
+# bound at run time at a pinned git SHA (the Run ID records it) rather than baked in, so a code
+# change does not mean an image rebuild and the image hash means "the substrate", not "this commit".
+
+Bootstrap: docker
+From: ubuntu:24.04
+
+%files
+    # Only the substrate definition enters the image; the lock is what makes it reproducible.
+    pixi.toml /opt/beethoven-research/pixi.toml
+    pixi.lock /opt/beethoven-research/pixi.lock
+
+%post
+    set -eu
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates curl git bash tini
+    rm -rf /var/lib/apt/lists/*
+
+    # Node 22 from NodeSource (the major the launcher's image uses too), then Claude Code. The exact
+    # Claude Code version is not pinned here because its release cadence outruns this recipe; the
+    # version that landed is recorded by build.sh into the digest file beside the image, which is
+    # the number to cite, never one guessed in this file.
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y --no-install-recommends nodejs
+    rm -rf /var/lib/apt/lists/*
+    npm install -g @anthropic-ai/claude-code
+    npm cache clean --force
+
+    # pixi, pinned to the version that produced the committed lock, installed from its release
+    # asset rather than the install script so the build makes one fetch it can name.
+    PIXI_VERSION=0.81.0
+    curl -fsSL -o /usr/local/bin/pixi \
+        "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl"
+    chmod 0755 /usr/local/bin/pixi
+
+    # Reconstruct the environment from the lock alone. --locked refuses to re-solve: if the manifest
+    # and the lock disagree the build fails here, which is the point.
+    cd /opt/beethoven-research
+    pixi install --locked
+    # The solve cache is build-time only; the environment under .pixi/envs/default is what runs.
+    rm -rf /root/.cache/rattler /root/.cache/pixi
+
+%environment
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export PATH=/opt/beethoven-research/.pixi/envs/default/bin:/usr/local/bin:$PATH
+    # The engine's package is bound at run time; this is where the job binds it.
+    export PYTHONPATH=/work/src
+    # Belt and braces under --cleanenv: no credential variable survives into a job even if a caller
+    # set one. The engine authenticates only through the student's bound CLAUDE_CONFIG_DIR.
+    unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+
+%runscript
+    # tini reaps the subprocesses claude -p spawns when a step is killed at its wall time.
+    exec /usr/bin/tini -- "$@"
+
+%labels
+    org.opencontainers.image.title beethoven-research substrate
+    org.opencontainers.image.description Node 22 + Claude Code CLI + the pixi-locked verification stack
+    org.opencontainers.image.source https://github.com/OpenSpineConsortium/beethoven-research
+
+%help
+    The Beethoven research engine's substrate image. Run with
+        apptainer exec --containall --cleanenv --no-home \
+            --bind <checkout>:/work --bind <claude_config_dir>:/claude:ro \
+            --env CLAUDE_CONFIG_DIR=/claude <image>.sif <command>
+    See containers/README.md. Beethoven runs Claude Code and is not an Anthropic product.

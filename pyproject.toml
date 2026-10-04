@@ -1,0 +1,40 @@
+# Package metadata and tool configuration. The environment itself is pixi's (pixi.toml / pixi.lock);
+# this file only tells the tools where the code is and how strict to be. The package is imported
+# from src/ via PYTHONPATH (set in pixi.toml's activation), so no build backend is needed yet.
+
+[project]
+name = "beethoven-research"
+version = "0.0.0"
+description = "Autonomous prompt-to-paper research engine: deterministic substrate and verification gate"
+requires-python = ">=3.11"
+# Runtime dependencies are pinned by pixi.lock; this list is the declared intent for readers.
+dependencies = [
+  "icontract>=2.6",
+  "pydantic>=2",
+  "beartype>=0.18",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+# Correctness and clarity only; style churn is not a gate.
+select = ["E", "F", "W", "I", "B", "UP"]
+# Contract lambdas take positional names that must match the function's arguments, and are often
+# long; line length is already enforced at 100.
+ignore = ["E731"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["beethoven_research"]
+strict = true
+# icontract and beartype ship their own types; crosshair is a dev tool, never imported by the package.
+warn_unused_ignores = true
