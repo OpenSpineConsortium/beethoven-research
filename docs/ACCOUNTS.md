@@ -123,20 +123,26 @@ successor acquires, reads the state, announces, and continues. Every switch is l
 resumed Claude Code session" and waits on the re-plan thread's amendment of the plan). Claude Code
 resumes a session from the absolute path of its transcript file (`--resume <path>`, the CLI
 reference, read 2026-10-04), and `--fork-session` gives the continuation a new session id. The
-holder's transcript is at a path the engine computes without listing anything:
-`<its sign-in directory>/projects/<cwd slug>/<session id>.jsonl`, the session id being the one the
-job chose with `--session-id`. The successor's job binds that one file read-only
+spent session's own `SessionStart` hook (an image hook, like the guard; its input carries
+`transcript_path` and `session_id`) records that path and id in the run directory, mode 0600
+beside the socket file, so nothing of ours lists inside a sign-in directory; the engine passes the
+absolute path to the next holder's job. That job binds the one file read-only
 (`--bind <path>:/handoff/<id>.jsonl:ro`) beside its own account's directory at `/claude`, and
-starts Claude Code with `--resume /handoff/<id>.jsonl --fork-session`: the continuation's
-transcript lands under the successor's directory, the holder's file is never written, and no
-credential moves. The only thing the hand-off changes about sign-ins is still *which directory the
-next job binds*, plus one transcript read. This is what claude-swap's `--share-history` is for,
-without sharing a history folder. What it costs: the first turn after the hand-off re-sends the
-whole context, because the prompt cache belongs to the account, so the holder compacts before it
-hands off when it can; the master's in-process team does not carry over (the successor re-spawns
-its teammates), satellites are registry rows and do. Whether a resume from a read-only path with
-the fork works under another account's `CLAUDE_CONFIG_DIR`, and where the fork's transcript lands,
-is not yet measured (section 9).
+starts Claude Code with `--resume /handoff/<id>.jsonl --fork-session` under its own
+`CLAUDE_CONFIG_DIR`: the holder's file is never written (the read-only bind is the check), nothing
+is copied or written into any sign-in directory by ours, no credential moves, and the
+continuation's transcript is expected, not yet measured, to land under the successor's directory.
+The engine's own saved state is written first and stays the record of truth. The only thing the
+hand-off changes about sign-ins is still *which directory the next job binds*, plus one transcript
+read. This is what claude-swap's `--share-history` is for, without sharing a history folder.
+Still refused: a shared or copied history directory, `--resume <id>` or `--continue` across
+directories, and any session of another person's account. What it costs: the first turn after the
+hand-off re-sends the whole context, because the prompt cache belongs to the account, so the
+holder compacts before it hands off when it can; the master's in-process team does not carry over
+(the successor re-spawns its teammates), satellites are registry rows and do; a workflow run's
+saved results are not restored, so a workflow run stays on one account; a master's Remote Control
+re-registers under the new account, so greg opens claude.ai signed in to that account. Not built
+until probe M13 (section 9) is on record; BUILD_PLAN §17.2.9 is the plan's text for it.
 
 The threshold needs a number the engine does not have yet: how Claude Code reports the remaining
 window is **not yet measured** (Linear BEE-121 measures it first; BEE-188 builds the reading).
@@ -210,9 +216,11 @@ graph at once, with a lease that moves between them (section 5). That is §17's,
   `~/.claude` (§17.4 M9); it matters for where Claude Code's own writes land, not for ours.
 - The cost in wall time of the by-hand sitting at Wayne State (the launcher's sitting is measured;
   this one is the same commands with another directory).
-- A resume from the absolute path of a transcript bound read-only, with `--fork-session`, under
-  another account's `CLAUDE_CONFIG_DIR` (section 5): whether it starts, where the fork's transcript
-  lands, and which Claude Code version added the path form (the CLI reference does not say; the
-  image installs the current release at build time).
-- How the engine learns a forked master's new session id without listing its directory (a `-p`
-  step reports it in its `init` event; an interactive master is the open case).
+- Probe M13 (BUILD_PLAN §17.4), the hand-off of section 5: a resume from the absolute path of a
+  transcript bound read-only, with `--fork-session`, under another account's `CLAUDE_CONFIG_DIR`,
+  in `-p` and under a pseudo-terminal (plain `claude`, and in front of `claude remote-control`,
+  whose argument handling is not on record); where the continuation is written; that the source
+  file stays unwritten; the first turn's `context_tokens` and `estimated_cache_write_usd` from the
+  resume's `SessionStart` fields, logged at every hand-off; a turn cut by a limit hit resuming with
+  its interrupted tool call marked; and which Claude Code version added the path form (the CLI
+  reference does not say; the image installs the current release at build time).

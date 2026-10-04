@@ -40,9 +40,9 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   the session that reached its limit, bound read-only into the successor's job, with
   `--fork-session` (`docs/ACCOUNTS.md` section 5; this supersedes BUILD_PLAN §17.2.4's "never a
   resumed Claude Code session" and waits on the re-plan thread's amendment). The engine holds
-  directory paths and labels only (`accounts.json`: label, path, enabled, order), looks inside a
-  sign-in directory for nothing but its own session's transcript at the path it computed, and never
-  copies between them (claude-swap's credential backup is exactly what we do not do; the switch is
+  directory paths and labels only (`accounts.json`: label, path, enabled, order), reads inside a
+  sign-in directory nothing but the one transcript whose path the session's own hook recorded, and
+  never copies between them (claude-swap's credential backup is exactly what we do not do; the switch is
   `CLAUDE_CONFIG_DIR` selection for the next session), logs every switch,
   and never uses anyone else's account. No pooled tokens, nothing that evades detection, usage
   credits never on any account; a spent account hibernates until its reset. Record, not a gate:
@@ -206,8 +206,9 @@ The whole of it is `docs/ACCOUNTS.md` and BUILD_PLAN §17.2.1; the rule in four 
   releases, and the successor's job, on its own account's directory, reads the state and continues.
   The successor's job also binds the holder's session transcript, one file, read-only, and starts
   Claude Code with `--resume <that path> --fork-session`, so the conversation continues under the
-  next account with a new session id (greg, 03:23Z; not yet measured on the grid, `docs/ACCOUNTS.md`
-  section 9). Every switch is logged. The usage threshold (90 % by default, claude-swap's number) waits on how
+  next account with a new session id; the path comes from the spent session's own `SessionStart`
+  hook, which records it in the run directory (greg, 03:23Z; not built until probe M13 is on
+  record, `docs/ACCOUNTS.md` section 9). Every switch is logged. The usage threshold (90 % by default, claude-swap's number) waits on how
   Claude Code reports the window, not yet measured (BEE-121, BEE-188).
 
 ## Parallel work: worktrees, workflows, teams and messaging
