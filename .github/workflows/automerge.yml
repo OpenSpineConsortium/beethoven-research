@@ -1,9 +1,7 @@
 name: automerge
-# greg's rule (project thread, 2026-10-04 02:11Z, asked for here 03:35Z): no human step per pull
-# request; whether a change lands is decided by the tests. Every pull request opened ready for
-# review gets GitHub's own auto-merge armed when it opens; GitHub merges it once the checks the
-# main rule requires (.github/rulesets/main.json: the gate and image lanes) are green. A draft is
-# left alone. The same file as beethoven-desktop's, so the two repositories behave alike.
+# No human step per pull request: whether a change lands is decided by the tests. Every pull
+# request opened ready for review gets GitHub's own auto-merge armed when it opens; GitHub merges it
+# once the required checks in .github/rulesets/main.json are green. A draft is left alone.
 #
 # It can never land an untested change: it arms only when main really carries a required-checks
 # rule, and it arms through GraphQL's enablePullRequestAutoMerge, which waits for the checks and

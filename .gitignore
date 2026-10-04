@@ -9,8 +9,9 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# Apptainer images are large and are built on the grid or in CI from containers/*.def, not committed.
-# The image's recorded digest (containers/*.sif.sha256) IS committed; the .sif itself is not.
+# Apptainer images are large and are never committed. The substrate image is beethoven-agents'; the
+# study image that layers on it (plan/REPO_SPLIT.md section 2) will be built on the grid from its
+# recipe here, with its recorded digest committed beside the recipe and the .sif itself not.
 *.sif
 
 # Secrets never enter the repository (see CLAUDE.md). The real values live in the environment.
@@ -18,8 +19,12 @@ __pycache__/
 .env.*
 *.pem
 
-# Worktrees Claude Code creates for parallel sessions and isolated subagents (docs/PARALLEL.md).
+# Worktrees Claude Code creates for parallel sessions and isolated subagents.
 .claude/worktrees/
+
+# The file Claude Code writes on an "always allow" answer: one person's permissions, never shared,
+# and an untracked file would make the pre-push hook refuse every push from that checkout.
+.claude/settings.local.json
 
 # OS / editor noise
 .DS_Store

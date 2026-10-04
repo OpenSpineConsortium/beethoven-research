@@ -1,0 +1,50 @@
+# Package metadata and tool configuration. The environment itself is pixi's (pixi.toml / pixi.lock);
+# this file only tells the tools where the code is and how strict to be. The package is imported
+# from src/ via PYTHONPATH (set in pixi.toml's activation), so no build backend is needed yet.
+
+[project]
+name = "beethoven-qa"
+version = "1.0.0"
+description = "Beethoven code-writing and verification framework: contracts, layered types, the CrossHair/Z3 gate"
+requires-python = ">=3.11"
+# Runtime dependencies are pinned by pixi.lock (here, and in every repository that carries a copy of
+# this package); this list is the declared intent for readers.
+dependencies = [
+  "icontract>=2.6",
+  "pydantic>=2",
+  "beartype>=0.18",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Correctness and clarity only; style churn is not a gate.
+select = ["E", "F", "W", "I", "B", "UP"]
+# Contract lambdas take positional names that must match the function's arguments, and are often
+# long; line length is already enforced at 100.
+ignore = ["E731"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+packages = ["beethoven_qa"]
+strict = true
+# icontract and beartype ship their own types; crosshair is a dev tool, never imported by the package.
+warn_unused_ignores = true
+
+# The gate's settings for this repository (`python -m beethoven_qa gate` reads them). Every
+# repository that carries a copy of beethoven-qa writes the same table for its own package.
+[tool.beethoven-qa]
+package = "beethoven_qa"
+src = "src"
+# Modules allowed to carry no contracts: wiring, re-exports and the command line's I/O, never logic.
+exempt = ["beethoven_qa", "beethoven_qa.contracts", "beethoven_qa.__main__"]
+per_condition_timeout = 20

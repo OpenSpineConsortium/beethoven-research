@@ -31,11 +31,7 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "gate (lock → lint, typecheck, tests, CrossHair/Z3)",
-            "integration_id": 15368
-          },
-          {
-            "context": "image (apptainer build)",
+            "context": "gate (lock → lint, typecheck, tests, CrossHair/Z3, vendor-check)",
             "integration_id": 15368
           }
         ]

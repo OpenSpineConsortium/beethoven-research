@@ -1,0 +1,40 @@
+name: automerge
+# No human step per pull request: whether a change lands is decided by the tests. Every pull
+# request opened ready for review gets GitHub's own auto-merge armed when it opens; GitHub merges it
+# once the required checks in .github/rulesets/main.json are green. A draft is left alone.
+#
+# It can never land an untested change: it arms only when main really carries a required-checks
+# rule, and it arms through GraphQL's enablePullRequestAutoMerge, which waits for the checks and
+# never merges on the spot (`gh pr merge --auto` merges at once a pull request nothing blocks).
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  arm:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: arm auto-merge when main requires the checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          PR_ID: ${{ github.event.pull_request.node_id }}
+        run: |
+          set -uo pipefail
+          n=$(gh api "repos/$REPO/rules/branches/$BASE" --jq '[.[] | select(.type == "required_status_checks")] | length') || n=0
+          if [ "${n:-0}" = 0 ]; then
+            echo "::notice::$BASE has no required-checks rule yet (.github/rulesets/main.json is not applied), so auto-merge stays off: armed now, it would merge before the tests."
+            exit 0
+          fi
+          if out=$(gh api graphql -f query='mutation($id: ID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) { pullRequest { number autoMergeRequest { enabledAt } } } }' -f id="$PR_ID" 2>&1); then
+            echo "auto-merge armed: the pull request merges when the required checks are green"
+          else
+            echo "::notice::auto-merge not armed: $out"
+          fi

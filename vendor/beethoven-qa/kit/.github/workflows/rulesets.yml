@@ -1,0 +1,51 @@
+name: rulesets
+# Rulesets as code (greg, 2026-10-04): the rule that guards main lives in .github/rulesets/*.json
+# and is applied to GitHub from here, so a change to the rule is a tested commit and the
+# repository's settings never drift from the file. Every repository that carries beethoven-qa's
+# kit has this same file. A merge that auto-merge makes under the workflow token starts no
+# workflow on main, so a rule file that lands that way is applied by the daily run (or by hand,
+# with "Run workflow").
+#
+# The repository token cannot administer rulesets, so the apply step uses RULESETS_TOKEN: a
+# fine-grained personal access token the maintainer creates once (Settings, Developer settings,
+# Fine-grained tokens; these repositories only; "Administration: read and write") and stores as an
+# Actions secret. The token never enters the repository, a job file or an argv: it is read from the
+# secret into the environment of the one step that needs it. Without the secret the job says what
+# is missing and ends green.
+on:
+  push:
+    branches: [main]
+    paths: [.github/rulesets/*.json]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: apply .github/rulesets/*.json to this repository (create or update by name)
+        env:
+          GH_TOKEN: ${{ secrets.RULESETS_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::RULESETS_TOKEN is not set; nothing applied. Create a fine-grained token with Administration: read and write on $REPO, store it as the RULESETS_TOKEN secret, then run this workflow."
+            exit 0
+          fi
+          existing=$(gh api "repos/$REPO/rulesets?per_page=100")
+          for f in .github/rulesets/*.json; do
+            name=$(jq -r '.name' "$f")
+            id=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"$existing" | head -n 1)
+            if [ -n "$id" ]; then
+              gh api -X PUT "repos/$REPO/rulesets/$id" --input "$f" --jq '"updated \(.id) \(.name) (\(.enforcement))"'
+            else
+              gh api -X POST "repos/$REPO/rulesets" --input "$f" --jq '"created \(.id) \(.name) (\(.enforcement))"'
+            fi
+          done

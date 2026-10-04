@@ -1,0 +1,46 @@
+#!/bin/sh
+# The definition-of-done gate runs before every push, not only in CI: lint, typecheck, the tests
+# under typeguard, and the CrossHair/Z3 proof of every contract. A push with a red gate does not
+# leave the machine. --locked: the gate runs in the environment pixi.lock records, and a manifest
+# that drifted from its lock fails here instead of being re-solved, without a word, into a lock
+# nobody chose. Skip it only knowingly, with SKIP_GATE=1, and say so in the commit.
+if [ "${SKIP_GATE:-}" = 1 ]; then
+  echo "pre-push: gate skipped (SKIP_GATE=1)" >&2
+  exit 0
+fi
+cd "$(git rev-parse --show-toplevel)" || exit 1
+# Git hands a hook the variables that name the repository (GIT_DIR and its kin; from a linked
+# worktree, the path of that worktree's own git directory). The gate's tests make throwaway
+# repositories of their own, and a git that inherits GIT_DIR acts on this repository instead,
+# whatever -C names: measured 2026-10-04, a push from a worktree left a commit and a tag here.
+# From here on git finds the repository from the directory, as it does for a person.
+unset $(git rev-parse --local-env-vars)
+
+# The gate proves what is checked out, so what is pushed must be exactly that: every ref git
+# lists on stdin (a deletion, all zeros, carries nothing to prove) must be HEAD's commit, and the
+# tree must hold nothing uncommitted, untracked files included, since they change the verdict.
+refuse() {
+  echo "pre-push: refused. $1" >&2
+  echo "pre-push: check out and commit what is pushed, then push again; or push knowingly with SKIP_GATE=1 and say so in the commit." >&2
+  exit 1
+}
+head=
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in
+    *[!0]*) ;;
+    *) continue ;;
+  esac
+  if [ -z "$head" ]; then
+    head=$(git rev-parse --verify --quiet 'HEAD^{commit}') ||
+      refuse "nothing is checked out, so the gate has nothing to prove for $remote_ref."
+    if [ -n "$(git status --porcelain)" ]; then
+      refuse "the tree has changes that are not committed, so the gate would prove something other than the commit being pushed."
+    fi
+  fi
+  pushed=$(git rev-parse --verify --quiet "$local_sha^{commit}") || pushed=
+  if [ "$pushed" != "$head" ]; then
+    refuse "$remote_ref would be $local_sha, which is not the checked-out commit $head."
+  fi
+done
+echo "pre-push: running the gate (pixi run --locked gate) before the push" >&2
+exec pixi run --locked gate

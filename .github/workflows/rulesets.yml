@@ -1,8 +1,8 @@
 name: rulesets
-# Rulesets as code (greg, project thread, 2026-10-04 02:11Z, asked for here 03:35Z): the rule that
-# guards main lives in .github/rulesets/*.json and is applied to GitHub from here, so a change to
-# the rule is a tested commit and the repository's settings never drift from the file. The same
-# file as beethoven-desktop's. A merge that auto-merge makes under the workflow token starts no
+# Rulesets as code (greg, 2026-10-04): the rule that guards main lives in .github/rulesets/*.json
+# and is applied to GitHub from here, so a change to the rule is a tested commit and the
+# repository's settings never drift from the file. Every repository that carries beethoven-qa's
+# kit has this same file. A merge that auto-merge makes under the workflow token starts no
 # workflow on main, so a rule file that lands that way is applied by the daily run (or by hand,
 # with "Run workflow").
 #
