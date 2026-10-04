@@ -35,10 +35,15 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   (`$HOME/.beethoven/accounts/<label>/claude`; the launcher's `$HOME/.beethoven/claude` is the
   account `main`, reached by a link, nothing moved), one master job per account, one account holding
   the super-master lease (greg's word: the mutex) at a time and handing it to the next as its window
-  nears its limit; the run carries over from the engine's saved state, never a resumed Claude Code
-  session. The engine holds directory paths and labels only (`accounts.json`: label, path, enabled,
-  order), never looks inside or copies between them (claude-swap's credential backup is exactly what
-  we do not do; the switch is `CLAUDE_CONFIG_DIR` selection for the next session), logs every switch,
+  nears its limit; the run carries over from the engine's saved state, and (greg, 03:23Z) the
+  holder's own session carries over with it: the successor resumes it from the transcript file of
+  the session that reached its limit, bound read-only into the successor's job, with
+  `--fork-session` (`docs/ACCOUNTS.md` section 5; this supersedes BUILD_PLAN §17.2.4's "never a
+  resumed Claude Code session" and waits on the re-plan thread's amendment). The engine holds
+  directory paths and labels only (`accounts.json`: label, path, enabled, order), reads inside a
+  sign-in directory nothing but the one transcript whose path the session's own hook recorded, and
+  never copies between them (claude-swap's credential backup is exactly what we do not do; the switch is
+  `CLAUDE_CONFIG_DIR` selection for the next session), logs every switch,
   and never uses anyone else's account. No pooled tokens, nothing that evades detection, usage
   credits never on any account; a spent account hibernates until its reset. Record, not a gate:
   Anthropic's Usage Policy of 2025-09-15 (read 2026-10-04) lists under "Do Not Abuse our Platform"
@@ -53,7 +58,9 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   Claude Code where one of the student's own sign-ins already is and reads only `claude auth
   status`. One person, their own accounts (D4): a job binds exactly one sign-in directory, nothing
   of ours ever copies, moves or links a credential between two of them, and no account is used by
-  anyone but its holder.
+  anyone but its holder. Nothing of ours sets `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` (the VS
+  Code edition's paid overflow is excluded, BUILD_PLAN §2 C8, Linear BEE-191); the image unsets both
+  and the guard refuses a line that sets them.
 - **Usage credits are never used.** greg's rule of 2026-10-04, with the same rank as every other
   bullet here (BUILD_PLAN §2 C7): no run draws on, buys or turns on usage credits for any account,
   and nothing in this repository treats them as an option or a default. A spent window is waited
@@ -197,7 +204,11 @@ The whole of it is `docs/ACCOUNTS.md` and BUILD_PLAN §17.2.1; the rule in four 
 - The super-master lease is one row in the engine store, taken by compare-and-set with a fencing
   token and renewed every 60 s; the hand-off writes the top-level state, names the successor and
   releases, and the successor's job, on its own account's directory, reads the state and continues.
-  Every switch is logged. The usage threshold (90 % by default, claude-swap's number) waits on how
+  The successor's job also binds the holder's session transcript, one file, read-only, and starts
+  Claude Code with `--resume <that path> --fork-session`, so the conversation continues under the
+  next account with a new session id; the path comes from the spent session's own `SessionStart`
+  hook, which records it in the run directory (greg, 03:23Z; not built until probe M13 is on
+  record, `docs/ACCOUNTS.md` section 9). Every switch is logged. The usage threshold (90 % by default, claude-swap's number) waits on how
   Claude Code reports the window, not yet measured (BEE-121, BEE-188).
 
 ## Parallel work: worktrees, workflows, teams and messaging
@@ -235,8 +246,13 @@ against the worktrees, workflows, agent-teams, cross-session-messaging and agent
   a session in a container and one on the host, or sessions on two nodes, do not reach each other
   over it. Across nodes and accounts: the engine's bus (the store's `messages` and `registry`
   tables, an append-only inbox file per session on the lab volume as the fallback), carried into
-  each session by a sidecar that posts into its inbox socket with the session's own token; across
-  nodes for one account, Remote Control carries notices. A message from another session cannot
+  each session by a sidecar that posts into its inbox socket with the session's own token (Claude
+  Code exports `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` only to the session's
+  own hooks and Bash commands, before `SessionStart` runs, so a `SessionStart` hook baked into the
+  image writes both to a mode-0600 file in the run directory for the sidecar; the token is a secret
+  under the secrets rule; the managed settings never set `crossSessionInbound`, since a `hold` there
+  would override every job's `accept`); across nodes for one account, Remote Control carries
+  notices. A message from another session cannot
   approve anything, change settings or run a command; every message is logged; nothing of ours asks
   another session to do what its own session was refused.
 - **No orphans** (§17.2.6). One registry row per session (run, account, job id, node, session id,
