@@ -69,5 +69,25 @@ jobs:
             python -c "import icontract, pydantic, beartype, crosshair, z3; print('substrate ok')"
           sudo apptainer exec --containall --cleanenv --no-home "$RUNNER_TEMP/claude-verify.sif" \
             claude --version
+      - name: the managed settings and the guard are in the image and the guard blocks
+        # The guard is run exactly as managed-settings.json names it, with the event JSON Claude
+        # Code would send; a wrong exit code here is the difference between a blocked deletion and
+        # a non-blocking error that lets it through.
+        run: |
+          sudo apptainer exec --containall --cleanenv --no-home "$RUNNER_TEMP/claude-verify.sif" \
+            python3 -c "import json; s=json.load(open('/etc/claude-code/managed-settings.json')); \
+              assert s['permissions']['disableBypassPermissionsMode']=='disable'; print('managed settings ok')"
+          set +e
+          printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/work"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
+              "$RUNNER_TEMP/claude-verify.sif" \
+              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+          rc=$?; set -e
+          test "$rc" -eq 2 && echo "guard blocks (exit 2)" || { echo "guard answered $rc, expected 2"; exit 1; }
+          printf '%s' '{"tool_name":"Bash","tool_input":{"command":"pytest -q"},"cwd":"/work"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
+              "$RUNNER_TEMP/claude-verify.sif" \
+              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+          echo "guard allows (exit 0)"
       - name: show what was built
         run: cat "$RUNNER_TEMP/claude-verify.digest"

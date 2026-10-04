@@ -46,8 +46,11 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   Claude Code login directory, the workspace, another run, or anything else under `$HOME`. A
   destructive subcommand must refuse when `CLAUDECODE`, `BEETHOVEN_REQUEST_ID` (or the older
   `ASHLEY_REQUEST_ID`) or a similar agent marker is in the environment, or when stdin is not a
-  terminal. This is the lesson of the 2026-09-28 `~/.ashley` deletion; the guard hook (G4) enforces
-  it and the Z3 gate proves the file-touching helpers cannot escape their run directory.
+  terminal. This is the lesson of the 2026-09-28 `~/.ashley` deletion. The PreToolUse guard
+  (`src/beethoven_research/guard.py`, baked into the image and named by its managed settings,
+  Linear BEE-123/BEE-124) refuses it in the agent's shell and file tools, and the Z3 gate proves
+  the guard never lets a write into the sign-in directory through and never blocks on anything but
+  its listed triggers.
 - **Grid etiquette.** Nothing container-related on the login node; container temp and cache on the
   compute node's local disk (`/tmp/$USER/...` with a cleanup trap — on Wayne State `$TMPDIR` is NOT
   node-local, it is CephFS, so never trust it blindly); IPC under `/dev/shm`; client-side scheduler
@@ -88,16 +91,51 @@ this for pipeline code, are G1 issues still to build.
 
 ## Token economy — always on, every run (Goal 3 / Goal 5 orchestration half)
 
-Lazy tool loading (`ENABLE_TOOL_SEARCH` / mcp-cli, schemas on demand); prompt-cache TTLs via managed
-settings (`promptCacheTtl: 1h` lead, `subagentPromptCacheTtl: 5m`); preemptive auto-compaction
-(`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=65` paired with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000` — the
-override alone is unreliable in `-p`); dual-hook state preservation (PreCompact serializes to
-node-local `scratchpad.json`, SessionStart re-injects); concurrency caps
-(`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`=cores, `MAX_SUBAGENT_SPAWN_DEPTH=1`,
-`MAX_SUBAGENTS_PER_SESSION=50`); quota-window-aware pacing by the orchestrator (hold a step or a
-`foreach` branch when the window is nearly spent, resume when it rolls, hibernate rather than
-retry). How Claude Code reports the remaining window is **not yet measured** (Linear BEE-121
-measures it first); nothing here should claim a number for it.
+Every name below was checked against code.claude.com/docs on 2026-10-04 (three names in the plan
+were stale; the plan's §4 is the intent, this is what the tool actually accepts). Two places hold
+the knobs, and which one is not a matter of taste: an `env` value in the image's managed settings
+overwrites the same variable a job exports, so the image holds only what is never tuned
+(`containers/managed-settings.json`, `containers/README.md`), and the job template holds the rest.
+
+- **Lazy tool loading** is Claude Code's default: with `ENABLE_TOOL_SEARCH` unset, MCP tool schemas
+  are deferred and fetched on demand. Nothing to set; the variable matters only behind a proxy.
+  The `mcp-cli` route in the plan is not needed for this.
+- **Prompt-cache TTL**: on a Claude subscription, within the plan's included usage (decision D1),
+  the main `-p` conversation already gets the one-hour TTL and everything else (subagents,
+  compaction, titles) five minutes; nothing is set. Once a run draws on usage credits Claude Code
+  drops the main conversation to five minutes by its own rule, and keeping the hour
+  (`promptCacheTtl: "1h"` or `CLAUDE_CODE_PROMPT_CACHE_TTL=1h`) is then billed per write; whether
+  to do that is a BEE-121 pacing decision, never a default (Linear BEE-118).
+- **Auto-compaction**, job-side per step: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (a plain integer from
+  100000 to 1000000, capped at the model's window) with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1–100;
+  it can only lower the threshold, and applies only in sessions that compact before the model's
+  context limit, which is why the two go together) (Linear BEE-119). Dual-hook state preservation
+  (PreCompact serialises decisions to node-local scratch, SessionStart with the `compact` matcher
+  re-injects them through `hookSpecificOutput.additionalContext`) is BEE-120, built with the run
+  directory it writes into; hooks of the engine's own are baked into the image like the guard,
+  since `allowManagedHooksOnly` is on there.
+- **Concurrency**: `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` is locked in the image (no nested
+  subagent trees); `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (default 20) is set by the job to the
+  allocation's cores (Linear BEE-133). `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` has been a no-op
+  since Claude Code 2.1.224 and is not used. Fan-out from inside a step is also capped by the guard
+  (`sbatch --array` over 200 tasks is refused); larger fan-out is the orchestrator's, paced.
+- **Effort**: `CLAUDE_CODE_EFFORT_LEVEL` takes `low`, `medium`, `high`, `xhigh`, `max` or `auto`;
+  `medium` for implementation steps, higher for planning steps, set by the job. `ultracode`, which
+  the plan names, is not one of these values and is not yet checked.
+- **The shape of a `-p` step** (greg's Playbook, checked against the headless-mode page): the first
+  window starts the session with `--session-id`, every later window resumes it with `--resume` in
+  the same `CLAUDE_CONFIG_DIR`, so a step re-enters with its own compacted context instead of
+  re-reading the repository; `--permission-mode dontAsk` turns every would-be prompt into a
+  denial the model can see; `--max-turns` bounds the window; `--output-format stream-json
+  --verbose` makes every event a JSON line, and the final `result` event carries `subtype`,
+  `is_error`, `num_turns`, `permission_denials` and `total_cost_usd` (the cost is a list-price
+  figure; on a subscription it is not a bill). A usage-limit hit (`system/api_retry` with
+  `error: rate_limit`, or a result that says so) is a *scheduled* resubmission after the window
+  rolls, never a retry loop that burns the next window too.
+- **Quota-window-aware pacing** by the orchestrator: hold a step or a `foreach` branch when the
+  window is nearly spent, resume when it rolls, hibernate rather than retry. How Claude Code
+  reports the remaining window is **not yet measured** (Linear BEE-121 measures it first); nothing
+  here should claim a number for it.
 
 ## The engine is itself the subject of a methods paper (added 2026-10-04)
 
@@ -140,19 +178,26 @@ and needs the same commands as the environment's setup script.
 
 Anything that runs a container, a scheduler call or Claude Code runs on the grid inside a Slurm job,
 never on the login node and never on a laptop. The Apptainer image (`containers/claude-verify.def`)
-is built with `containers/build.sh`, which records the image digest to `containers/*.sif.sha256`;
-the `.sif` itself is not committed (it is large and rebuilt from the recipe + lock).
+is built with `containers/build.sh`, which records what was built in `containers/claude-verify.digest`;
+the `.sif` itself is not committed (it is large and rebuilt from the recipe + lock). The image
+bakes in `containers/managed-settings.json` and the guard; `containers/README.md` says what is
+locked there and what a job sets per step.
 
 ## Layout
 
 - `pixi.toml` / `pixi.lock` — the substrate: the verification stack (Goal 1) and the dev tooling the
   gate runs, pinned for `linux-64`. Orchestration (Metaflow), medical (pydicom/MONAI) and telemetry
   (W&B/CodeCarbon) are added as their own pixi features with their own issues, so this lock stays
-  small and honest rather than pinning an engine that does not exist yet.
-- `containers/` — the Apptainer recipe (Node + Claude Code CLI + this pixi env), the build script
-  and the recorded digest.
-- `src/beethoven_research/` — the engine package: `contracts.py` (the DbC conventions) and
-  `example.py` (the worked, fully-verified example).
+  small and honest rather than pinning an engine that does not exist yet. The first research
+  target the engine will run is the spine project (intraoperative fluoroscopic vertebral-body
+  detection and counting, synthetic DRRs, domain adaptation; greg's Drive folder *spine*): it is
+  what the medical feature is sized for when Goal 6 starts, and its plan side (sources, PHI, where
+  the data lives) is the planning thread's and Linear BEE-165's, not this file's.
+- `containers/` — the Apptainer recipe (Node + Claude Code CLI + this pixi env + the managed
+  settings and the guard), the build script and the recorded digest.
+- `src/beethoven_research/` — the engine package: `contracts.py` (the DbC conventions),
+  `example.py` (the worked, fully-verified example) and `guard.py` (the PreToolUse guard the image
+  runs before every shell and file call).
 - `tools/verify_gate.py` — the CrossHair/Z3 gate.
 - `tests/` — pytest, imported under the typeguard hook.
 - `.github/workflows/ci.yml` — the CI lanes; `.mcp.json` — Linear + GitHub via the environment.
