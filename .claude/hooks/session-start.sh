@@ -47,5 +47,7 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
         echo "export PIXI_NO_PATH_UPDATE=1"
     } >> "$CLAUDE_ENV_FILE"
 fi
+# The gate runs before every push (.githooks/pre-push), in a cloud session as on a laptop.
+(cd "$ROOT" && git config core.hooksPath .githooks) || true
 echo "session-start: $(pixi --version) and the locked environment are ready; run 'pixi run gate'."
 exit 0

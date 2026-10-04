@@ -57,3 +57,5 @@ test = "pytest -q"
 # per-function timeout. A module with no contracts is reported as such, not silently passed.
 symbolic = "python tools/verify_gate.py"
 gate = { depends-on = ["lint", "typecheck", "test", "symbolic"] }
+# The gate before every push, not only in CI: one command points git at the repository's hooks.
+hooks = "git config core.hooksPath .githooks"

@@ -181,6 +181,15 @@ A Claude Code cloud session gets the same environment from `.claude/hooks/sessio
 runs in a session with one repository; a project thread with several repositories does not read it
 and needs the same commands as the environment's setup script.
 
+**The gate runs before every push** (greg, 2026-10-04): `.githooks/pre-push` runs `pixi run gate`
+and a red gate does not leave the machine; `pixi run hooks` (or the session-start hook) points git
+at it with `core.hooksPath`. `SKIP_GATE=1` skips it knowingly, and the commit says why. On GitHub
+the same gate is the required check on `main`: the rule lives in `.github/rulesets/main.json`
+(deletion and force-push blocked; the `gate` and `image` lanes must be green; organization admins
+bypass) and is imported into the repository's rulesets, so whether a pull request lands is decided
+by the tests, with no review step and no human click once auto-merge is armed on it. Pull requests
+are opened ready for review, never as drafts.
+
 Anything that runs a container, a scheduler call or Claude Code runs on the grid inside a Slurm job,
 never on the login node and never on a laptop. The Apptainer image (`containers/claude-verify.def`)
 is built with `containers/build.sh`, which records what was built in `containers/claude-verify.digest`;
