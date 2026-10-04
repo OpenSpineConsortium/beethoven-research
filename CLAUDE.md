@@ -35,6 +35,11 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   `~/.claude/.credentials.json` or the student's `claude_config_dir` credentials. The engine starts
   Claude Code where the student's own sign-in already is and reads only `claude auth status`. One
   person, one account.
+- **Usage credits are never used.** greg's rule of 2026-10-04, with the same rank as every other
+  bullet here (BUILD_PLAN §2 C7): no run draws on, buys or turns on usage credits for any account,
+  and nothing in this repository treats them as an option or a default. A spent window is waited
+  out until it resets (Goal 3 pacing, Linear BEE-121); what else may pick a run up is the plan's
+  decision D1d, not this file's.
 - **No code on claude.ai and no interception of it.** The engine never injects into, proxies or
   parses claude.ai traffic. This was settled for the whole project; the notebook analyses that
   proposed it are excluded (BUILD_PLAN §2, C1).
@@ -102,10 +107,10 @@ overwrites the same variable a job exports, so the image holds only what is neve
   The `mcp-cli` route in the plan is not needed for this.
 - **Prompt-cache TTL**: on a Claude subscription, within the plan's included usage (decision D1),
   the main `-p` conversation already gets the one-hour TTL and everything else (subagents,
-  compaction, titles) five minutes; nothing is set. Once a run draws on usage credits Claude Code
-  drops the main conversation to five minutes by its own rule, and keeping the hour
-  (`promptCacheTtl: "1h"` or `CLAUDE_CODE_PROMPT_CACHE_TTL=1h`) is then billed per write; whether
-  to do that is a BEE-121 pacing decision, never a default (Linear BEE-118).
+  compaction, titles) five minutes; nothing is set. Claude Code's drop to five minutes, and the
+  per-write billing of an hour kept with `promptCacheTtl` or `CLAUDE_CODE_PROMPT_CACHE_TTL`, apply
+  only to a run on usage credits, which the engine never is (the non-negotiable above), so neither
+  is set and neither is a pacing knob (Linear BEE-118).
 - **Auto-compaction**, job-side per step: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (a plain integer from
   100000 to 1000000, capped at the model's window) with `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1–100;
   it can only lower the threshold, and applies only in sessions that compact before the model's
