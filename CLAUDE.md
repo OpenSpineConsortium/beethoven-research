@@ -99,6 +99,32 @@ node-local `scratchpad.json`, SessionStart re-injects); concurrency caps
 retry). How Claude Code reports the remaining window is **not yet measured** (Linear BEE-121
 measures it first); nothing here should claim a number for it.
 
+## The engine is itself the subject of a methods paper (added 2026-10-04)
+
+The build and every run are measured so the whole thing can be written up as a protocol / methods
+paper whose contribution is a relatively undirected agent on a shared academic grid (BUILD_PLAN
+§12; greg's message of 2026-10-04). Three things follow for code written here:
+
+- **Every long-running step declares its progress signal.** Anthropic's "Long-running Claude for
+  Scientific Computing" (2026-03-23) puts it plainly: long autonomous scientific work depends on the
+  agent having some way to tell whether it is making progress — a reference implementation, a
+  clearly quantifiable objective, or an existing test suite — and on committing after each
+  meaningful unit of work. A `claude -p` step without a declared signal is not scheduled (Linear
+  G5-7); the peeking Claude and the run index read that signal, never guess from logs.
+- **Human interventions are first-class data.** When a person steps in — to restart a stuck step,
+  redefine a search space, correct a result — it is logged then and there (what the agent was
+  doing, why, what changed, outcome), never reconstructed afterwards (Linear M-5). Prior work
+  found such interventions frequent; their count is a headline number of the paper, so it must be
+  honest.
+- **Each run records its compute and quota spend** beside its Run ID: Slurm job ids, partition and
+  QoS, wall time requested and used, GPU-hours, preemptions, tokens in and out, cache hit-rate,
+  compaction events, subagent count, energy (Linear M-6).
+
+Prompts, instruction files (this one included), agent logs, job scripts and git history are the
+paper's record; keep them whole and never trim them for tidiness. The cluster's acceptable-use
+position on autonomous agents and the paper's AI-use disclosure are the maintainer's hand step
+(Linear M-8) and gate the first unattended run.
+
 ## Build and test
 
 ```sh
