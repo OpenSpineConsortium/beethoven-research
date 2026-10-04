@@ -1,0 +1,24 @@
+# Pixi's solved environment: reconstructable from pixi.lock, never committed.
+.pixi/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Apptainer images are large and are built on the grid or in CI from containers/*.def, not committed.
+# The image's recorded digest (containers/*.sif.sha256) IS committed; the .sif itself is not.
+*.sif
+
+# Secrets never enter the repository (see CLAUDE.md). The real values live in the environment.
+.env
+.env.*
+*.pem
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log

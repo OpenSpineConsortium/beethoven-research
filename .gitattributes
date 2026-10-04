@@ -1,0 +1,20 @@
+# Line endings: everything text is LF in the repository and in the working tree, on every platform.
+# The engine runs on Linux compute nodes inside an Apptainer image; bash, sbatch and the container
+# recipe refuse CR. Without this a Windows checkout with core.autocrlf=true would corrupt them.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.def text eol=lf
+*.sbatch text eol=lf
+*.tpl text eol=lf
+*.png binary
+*.sif binary
+*.zip binary
+*.pdf binary
