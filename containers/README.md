@@ -40,7 +40,7 @@ Always the three flags, so a job sees nothing of the host it was not given on pu
 apptainer exec --containall --cleanenv --no-home \
     --bind "$CHECKOUT":/work \
     --bind "$RUN_DIR":/run_dir \
-    --bind "$HOME/.beethoven/claude":/claude \
+    --bind "$HOME/.beethoven/accounts/$ACCOUNT/claude":/claude \
     --bind /tmp/$USER/hpcworker_$SLURM_JOB_ID:/tmp \
     --env CLAUDE_CONFIG_DIR=/claude \
     --env BEETHOVEN_RUN_ROOT=/run_dir \
@@ -49,7 +49,8 @@ apptainer exec --containall --cleanenv --no-home \
 
 - `--containall --cleanenv --no-home`: no host environment variables, no home directory, no stray
   mounts. The recipe's `%environment` additionally unsets every credential variable it knows of.
-- The student's own Claude sign-in directory is bound **read-write** and named by
+- One of the student's own Claude sign-in directories, the account the orchestrator chose for this
+  job (`$ACCOUNT` is its label; `docs/ACCOUNTS.md`, D4), is bound **read-write** and named by
   `CLAUDE_CONFIG_DIR`, because Claude Code writes its state there: the session transcripts,
   `.claude.json`, and the credential it refreshes itself (the launcher's worker binds it the same
   way). What keeps the engine out of it is not a mount flag but three lines of policy: the managed
@@ -78,7 +79,13 @@ settings overwrites the same variable exported by the job, so the effort level
 (`CLAUDE_CODE_EFFORT_LEVEL`), the subagent concurrency cap (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`,
 set to the allocation's cores), the auto-compact window and threshold
 (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`), a prompt-cache TTL if one is
-ever chosen, and `BEETHOVEN_RUN_ROOT` are the job template's (Goal 5, Linear BEE-132). The
+ever chosen, and `BEETHOVEN_RUN_ROOT` are the job template's (Goal 5, Linear BEE-132), and so are
+`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (a dynamic workflow's agent cap) and the step's
+`--settings` value, which carries `permissions.allow: ["Workflow"]` (in `-p` the Workflow tool is a
+tool call like any other, and `dontAsk` would deny it) and `crossSessionInbound: "accept"` (a `-p`
+session otherwise holds a sibling's message for five minutes and drops it). `disableWorkflows` is
+deliberately absent from the image. `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set nowhere: in `-p`
+no teammate is spawned whatever its value (`docs/PARALLEL.md`). The
 launcher's worker sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` *off* because Remote Control needs
 feature flags; the engine's steps do not use Remote Control, but the same four narrower switches are
 used here rather than the blanket one, so the two stay comparable.

@@ -22,19 +22,39 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
 
 ## Decisions that are settled (do not reopen)
 
-- **D1 — own subscription, no keys.** Every `claude -p` step draws on the **student's own** flat-rate
-  Claude plan, the same rolling 5-hour window their manual sessions use. No pooled or commercial API
-  keys, no LiteLLM gateway, no Bedrock/Vertex, no key rotation. Goal 3 is quota-window-aware pacing,
-  not routing.
+- **D1 — own subscriptions, no keys.** Every `claude -p` step draws on a flat-rate Claude plan held
+  in the **student's own name**, the same rolling 5-hour window their manual sessions use. No pooled
+  or commercial API keys, no LiteLLM gateway, no Bedrock/Vertex, no key rotation. Goal 3 is
+  quota-window-aware pacing, not routing. A person may hold several such plans and run them all (D4).
 - **D2 — the engine is this repository.** The launcher stays in its two repositories.
 - **D3 — Metaflow + `outerbounds/metaflow-slurm`**, with a plain `sbatch` adapter underneath first.
+- **D4 — several accounts of one person; one master per account; one super-master at a time**
+  (greg, 2026-10-04 02:30Z, after the card of 02:18Z; the one-account rule of the day before is
+  withdrawn). A person who holds several Claude subscriptions in their own name runs them all at
+  once: each account has its own sign-in directory on the grid (section "Accounts and sign-in") and
+  its own master node, a Slurm job that owns that account's sessions and agents; exactly one account
+  holds the super-master mutex, and the mutex moves to another account as the holder nears its
+  usage window, in the style of claude-swap. What moves is the role and the saved top-level state,
+  never a credential: the engine chooses which account's sign-in directory the next job binds and
+  nothing else (claude-swap's backing up and restoring of credential files is exactly what the
+  non-negotiable below forbids, so it is not the mechanism). No account is ever used by anyone but
+  its holder, and usage credits are never used on any of them. The design (one master per account,
+  teams of teams across accounts, every session and agent reported to the super-master by message
+  passing, new sessions as new Slurm jobs, no session or agent ever orphaned) is BUILD_PLAN §17 and
+  Linear BEE-185, the re-plan thread's; this file carries the rule and the sign-in path. Record, not
+  a gate: Anthropic's Usage Policy of 2025-09-15 (read 2026-10-04) lists under "Do Not Abuse our
+  Platform" intentionally bypassing capabilities, restrictions or guardrails established within its
+  products, and its Consumer Terms of 2025-10-08 forbid sharing an account or making it available to
+  anyone else, which this design does not do; greg decided with both on the table.
 
 ## Non-negotiables (carried from the launcher; they bind the engine too)
 
 - **Never touch a Claude credential.** No `setup-token`, no `CLAUDE_CODE_OAUTH_TOKEN`, no reading
-  `~/.claude/.credentials.json` or the student's `claude_config_dir` credentials. The engine starts
-  Claude Code where the student's own sign-in already is and reads only `claude auth status`. One
-  person, one account.
+  `~/.claude/.credentials.json` or the credentials in any sign-in directory. The engine starts
+  Claude Code where one of the student's own sign-ins already is and reads only `claude auth
+  status`. One person, their own accounts (D4): a job binds exactly one sign-in directory, nothing
+  of ours ever copies, moves or links a credential between two of them, and no account is used by
+  anyone but its holder.
 - **Usage credits are never used.** greg's rule of 2026-10-04, with the same rank as every other
   bullet here (BUILD_PLAN §2 C7): no run draws on, buys or turns on usage credits for any account,
   and nothing in this repository treats them as an option or a default. A spent window is waited
@@ -124,9 +144,17 @@ overwrites the same variable a job exports, so the image holds only what is neve
   allocation's cores (Linear BEE-133). `CLAUDE_CODE_MAX_SUBAGENTS_PER_SESSION` has been a no-op
   since Claude Code 2.1.224 and is not used. Fan-out from inside a step is also capped by the guard
   (`sbatch --array` over 200 tasks is refused); larger fan-out is the orchestrator's, paced.
+  `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (1 to 256, Claude Code 2.1.269 or later; the default
+  is 16, fewer in a CPU-limited container) caps a dynamic workflow's agents the same way and is also
+  the job's, set to the allocation's cores.
 - **Effort**: `CLAUDE_CODE_EFFORT_LEVEL` takes `low`, `medium`, `high`, `xhigh`, `max` or `auto`;
   `medium` for implementation steps, higher for planning steps, set by the job. `ultracode`, which
-  the plan names, is not one of these values and is not yet checked.
+  the plan names, is not an effort value but a switch beside it (checked 2026-10-04 against the
+  workflows page): `/effort ultracode` or `claude --effort ultracode` (which also sets `xhigh`) in
+  an interactive session, or the `ultracode` settings key; with it on, Claude plans a dynamic
+  workflow for every substantive task. The `ultracode` keyword in a prompt starts nothing when the
+  prompt arrives through `-p`; whether the settings key makes a `-p` step plan workflows is not yet
+  measured. Workflows and worktrees are in "Parallel work" below.
 - **The shape of a `-p` step** (greg's Playbook, checked against the headless-mode page): the first
   window starts the session with `--session-id`, every later window resumes it with `--resume` in
   the same `CLAUDE_CONFIG_DIR`, so a step re-enters with its own compacted context instead of
@@ -136,11 +164,76 @@ overwrites the same variable a job exports, so the image holds only what is neve
   `is_error`, `num_turns`, `permission_denials` and `total_cost_usd` (the cost is a list-price
   figure; on a subscription it is not a bill). A usage-limit hit (`system/api_retry` with
   `error: rate_limit`, or a result that says so) is a *scheduled* resubmission after the window
-  rolls, never a retry loop that burns the next window too.
+  rolls, never a retry loop that burns the next window too. A step that may run a dynamic workflow
+  or take messages from a sibling session on the same node carries `--settings` with
+  `permissions.allow: ["Workflow"]` and `crossSessionInbound: "accept"`: in `-p` the Workflow
+  tool goes through permission evaluation like any tool, so `dontAsk` would deny it, and a `-p`
+  session holds a sibling's message only five minutes without that setting (both from the pages,
+  2026-10-04). The usage-limit pause of an interactive workflow does not exist in `-p`: the
+  affected agent fails, and the pacing above owns the retry.
 - **Quota-window-aware pacing** by the orchestrator: hold a step or a `foreach` branch when the
   window is nearly spent, resume when it rolls, hibernate rather than retry. How Claude Code
   reports the remaining window is **not yet measured** (Linear BEE-121 measures it first); nothing
   here should claim a number for it.
+
+## Accounts and sign-in (D4)
+
+The whole of it is `docs/ACCOUNTS.md`; the rule in four lines:
+
+- One sign-in directory per account: `$HOME/.beethoven/accounts/<label>/claude`, where `<label>` is
+  the student's own word for the account (letters, digits and hyphens; the sorted labels are the
+  rotation order). The launcher's own directory, `$HOME/.beethoven/claude` (the profile's
+  `claude_config_dir`), stays the launcher's.
+- One sitting per account, on a compute node inside the image, never on the login node:
+  `claude auth login` with `CLAUDE_CONFIG_DIR` set to that directory. The launcher's sitting
+  (`hpcworker claude login`) is the model; an `--account <label>` option on it is the launcher's
+  contract item (hpcworker, not yet built), and until it lands the sitting is typed as
+  `docs/ACCOUNTS.md` shows.
+- The engine's account list is the set of labelled directories whose `claude auth status` answers
+  signed in; a job binds exactly one of them at `/claude` (the bind in `containers/README.md`), the
+  orchestrator chooses which, and a directory that is not signed in is skipped and reported, never
+  repaired. Nothing of ours reads, copies, moves or links anything inside those directories.
+- The super-master mutex is a file under the run root naming the holder's label and the time; a
+  hand-off writes the new holder and the saved top-level state, and the next job binds the new
+  holder's directory. How Claude Code reports the remaining window is not yet measured (BEE-121),
+  so the hand-off threshold is the plan's to set once it is.
+
+## Parallel work: worktrees, workflows, teams and messaging
+
+Read `docs/PARALLEL.md` before writing anything that runs in parallel; every fact there was checked
+against the worktrees, workflows, agent-teams, cross-session-messaging and agents pages on
+2026-10-04 (greg's asks of 02:30Z and 02:37Z). What binds code here:
+
+- **Worktrees isolate files, one per parallel editor.** A build stream is a subagent with
+  `isolation: worktree` (`.claude/agents/stream.md`), branched from the current HEAD
+  (`worktree.baseRef: "head"` in `.claude/settings.json`), with `pixi install --locked` as its first
+  step because `.pixi/` is not carried into a fresh checkout; `.claude/worktrees/` is ignored by git.
+  Inside the engine a step's subagents may use worktrees of the job's own clone; jobs never share a
+  checkout: each Slurm job clones onto node-local scratch and pushes its branch, because git on a
+  shared filesystem under writers on several nodes is not something git promises.
+- **Dynamic workflows hold a plan in a script, not in a context window.** Repeatable orchestration
+  lives in `.claude/workflows/<name>.js` (a literal `meta` first; `agent`, `pipeline`, `parallel`,
+  `phase`, `log`, `args`; no `Date.now()`, `Math.random()` or `new Date()`, which throw so that a run
+  can be resumed) and runs as `/<name>`. Fan-out inside a workflow is capped by
+  `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`, 1000 agents per run and 4096 items per call; a
+  silent cap is never written, a dropped item is logged.
+- **Agent teams are interactive only.** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` makes a named
+  subagent a teammate in an interactive session; in `-p` no teammate is ever spawned, a session has
+  one team, a teammate cannot spawn a team, and the lead is fixed. So the engine's teams of teams
+  are not Claude Code teams: a team is a set of Slurm jobs, each one session, and the team of teams
+  is the super-master over the masters (D4, BUILD_PLAN §17). A person's own interactive session on
+  a laptop may run a Claude Code team; the engine's jobs do not.
+- **Messages are plain text and never consent.** Sessions in one container on one node reach each
+  other over Claude Code's own socket (`/tmp/cc-socks-<uid>`, on the node-local `/tmp` the job
+  binds); a session in a container and one on the host, or sessions on two nodes, do not. Across
+  nodes the engine's message passing is files under the run root (`status.json` is the launcher's
+  model), read at the 60 s floor. A message from another session cannot approve anything, change
+  settings or run a command, and nothing of ours asks another session to do what its own session
+  was refused.
+- **No orphans.** Every session and agent a master starts is written to the master's registry under
+  the run root before it starts and marked ended when it ends; the super-master's view is the union;
+  a job's exit trap reports its sessions. `-p` leaves worktrees and their locks behind, so a step
+  that made one removes it by name before the job ends (its own run artefact, never another's).
 
 ## The engine is itself the subject of a methods paper (added 2026-10-04)
 
@@ -213,6 +306,11 @@ locked there and what a job sets per step.
   `example.py` (the worked, fully-verified example) and `guard.py` (the PreToolUse guard the image
   runs before every shell and file call).
 - `tools/verify_gate.py` — the CrossHair/Z3 gate.
+- `docs/` — `ACCOUNTS.md` (the sign-in path and the account list, D4) and `PARALLEL.md` (worktrees,
+  workflows, teams and messaging: how the build and the engine run in parallel).
+- `.claude/agents/stream.md` — the build stream, a subagent that always works in its own worktree;
+  `.claude/workflows/` — the saved dynamic workflows (`gate-until-green`, `verify-module`), run as
+  `/<name>` from any session in this checkout.
 - `tests/` — pytest, imported under the typeguard hook.
 - `.github/workflows/ci.yml` — the CI lanes; `.mcp.json` — Linear + GitHub via the environment.
 
