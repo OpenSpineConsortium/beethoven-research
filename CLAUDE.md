@@ -45,8 +45,8 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   research pipeline here). The gate, the contracts and the code-writing workflows are
   beethoven-qa's; the image, the guard, accounts and orchestration are beethoven-agents'. A change
   here that needs anything of the launcher's is in the wrong repository.
-- **D3 — Metaflow + `outerbounds/metaflow-slurm`**, with a plain `sbatch` adapter underneath first
-  (built in beethoven-agents).
+- **D3 — Metaflow + `outerbounds/metaflow-slurm`**, with a plain `sbatch` adapter underneath first;
+  beethoven-agents' to build, and not built yet.
 - **D4 — several accounts of one person; one master per account; one super-master lease at a
   time** (greg, 2026-10-04). The whole of it is beethoven-agents' (`docs/ACCOUNTS.md` there); a
   study never chooses a sign-in directory itself.
@@ -60,9 +60,11 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
 - **Never touch a Claude credential.** No `setup-token`, no `CLAUDE_CODE_OAUTH_TOKEN`, no reading
   `~/.claude/.credentials.json` or the credentials in any sign-in directory. A study runs where one
   of the student's own sign-ins already is and reads only `claude auth status`. Nothing of ours
-  sets `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`: under greg's rule above the VS Code edition's
-  paid overflow, which used one, was removed as well (Linear BEE-191), so no edition of Beethoven
-  holds a key.
+  sets or holds `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`. Under greg's rule above, the VS Code
+  edition's paid overflow, which used one, is removed on that repository's `main` as 5.0.0 (Linear
+  BEE-191; merged, not yet built or published, so the Marketplace listing still offers the key until
+  a build without it ships, BUILD_PLAN §2 C8). "No API key anywhere" is the rule here whatever any
+  published edition still does.
 - **Usage credits are never used.** greg's rule of 2026-10-04 (BUILD_PLAN §2 C7), with the same
   rank as every other bullet here: no run draws on, buys or turns on usage credits for any account,
   and nothing in this repository treats them as an option or a default. A spent window is waited
@@ -100,8 +102,8 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
 
 ## Definition of done — every module that enters a run (Goal 1)
 
-beethoven-qa owns it (its `CLAUDE.md` and the `definition-of-done` skill, pinned here under
-`vendor/beethoven-qa/`); this repository runs its gate on its own package. In short, no module is
+beethoven-qa owns it (its `CLAUDE.md`, and the `definition-of-done` skill pinned here under
+`vendor/beethoven-qa/plugin/skills/`); this repository runs its gate on its own package. In short, no module is
 "done", and the gate will not let it enter a pipeline, until it clears all of:
 
 1. **Deterministic environment.** It resolves inside `pixi.lock` (exact versions, build strings,
@@ -136,8 +138,10 @@ when it proves the caller. The list is empty today: the first module is pure.
   `plan/SPINE_FIRST_STUDY.md` E.2 and G2 item 1). `src/beethoven_research/splits.py` is that check,
   pure and gated: `SplitLevel` names the level, `Split` is the boundary where the record's two
   partitions are read (pydantic), `shared_groups` and `disjoint` decide under beartype and the
-  contracts. The groups come from the record, never from a corpus the module reads itself.
-  CTSpinoPelvic1K is out of any split until its identity audit closes.
+  contracts. The groups come from the record, never from a corpus the module reads itself, and
+  each is a study-local pseudonym, never a patient's identifier: every failure of the check names
+  the groups it was given, so a label must be safe in a job log and a test report. CTSpinoPelvic1K
+  is out of any split until its identity audit closes.
 - **Every result row** carries n, a 95 % confidence interval, the Run ID, the commit and the
   clean-tree flag; a row from a dirty tree is refused. Not built yet (Linear G2).
 - **Every reported number** is reproduced by one command that exits non-zero if it moved (the

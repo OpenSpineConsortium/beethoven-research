@@ -49,13 +49,14 @@ mypy = ">=1.10"          # static types, the layer above the runtime checks
 crosshair-tool = ">=0.0.60"
 
 [activation]
-# The package and the pinned copy of beethoven-qa (vendor/beethoven-qa, docs there: CONSUMING.md),
-# imported without a build step. Absolute, so a `pixi run` started outside the root finds them too.
+# The package and the pinned copy of beethoven-qa (vendor/beethoven-qa; beethoven-qa's own
+# docs/CONSUMING.md says how it is taken and updated), imported without a build step. Absolute, so a `pixi run` started outside the root finds them too.
 env = { PYTHONPATH = "$PIXI_PROJECT_ROOT/src:$PIXI_PROJECT_ROOT/vendor/beethoven-qa/src" }
 
 [tasks]
-# The verification gate, in the order a module must clear it. CI calls `pixi run gate`; a developer
-# runs the same thing locally, so "passes in CI" and "passes on my machine" cannot diverge.
+# The verification gate, in the order a module must clear it. The pre-push hook runs
+# `pixi run --locked gate`; CI runs the same tasks one by one after `pixi install --locked`, so a
+# failure names its lane. Both read the same lock, so they check the same environment.
 lint = "ruff check src tests && ruff format --check src tests"
 typecheck = "mypy src"
 test = "pytest -q"

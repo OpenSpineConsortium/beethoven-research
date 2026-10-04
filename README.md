@@ -21,7 +21,7 @@ Vendor: Gregory Schwing, trading as OpenSpineConsortium. Private; the code is pr
   commercial API keys, no gateway, no usage credits, ever; "no API key anywhere" is the one
   fundamental rule of this software. Nothing here reads, copies, prints or relays a credential.
 - **D2:** three repositories (2026-10-04); the research pipeline stays here.
-- **D3:** orchestration is Metaflow with `metaflow-slurm`, built in beethoven-agents.
+- **D3:** orchestration is Metaflow with `metaflow-slurm`, beethoven-agents' to build (not built yet).
 - **D4:** several accounts of one person, handled in beethoven-agents; a study never picks a sign-in.
 - **PHI stays on the grid**, and no public push, release, preprint or submission ever comes from
   the engine: the Publish click is the maintainer's.
