@@ -158,6 +158,9 @@ second) found what these close; every one has a test in `tests/bee/`.
   window has reset rests nothing; the record keeps only its own session's reading; and a session
   that goes on after a limit (Claude Code waits for the reset, or the person types again) retires
   it at its next finished turn.
+- **Two bee processes at once.** The list is re-read just before each write rather than locked, so
+  two writes in the same instant can still lose one; the review's fuller answer, a lock file
+  around every read-modify-write, is left for the lease (BEE-189), which needs one anyway.
 
 ## 9. Not yet measured
 
