@@ -1,0 +1,93 @@
+name: ci
+# The definition of done, enforced before any module exists to be done. No job holds a secret and
+# none reaches the grid: GitHub's runners cannot (VPN and a one-time code stand between), and
+# tokens never enter a repository (CLAUDE.md). The grid is its own lane, run by a person or their
+# worker as a Slurm job, and the first real image build happens there (Linear BEE-103).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # The pixi that produced the committed lock. Fetched from its release asset by name, not from an
+  # install script, so the run makes one fetch it can account for.
+  PIXI_VERSION: 0.81.0
+
+jobs:
+  gate:
+    # Lane 1: the substrate reconstructs from the lock alone, then the four gates run inside it.
+    name: gate (lock → lint, typecheck, tests, CrossHair/Z3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: install pixi
+        run: |
+          curl -fsSL -o /usr/local/bin/pixi \
+            "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl"
+          chmod 0755 /usr/local/bin/pixi
+          pixi --version
+      - name: reconstruct the environment from the lock
+        # --locked refuses to re-solve: a manifest that drifted from its lock fails here, on purpose.
+        run: pixi install --locked
+      - name: lint
+        run: pixi run lint
+      - name: typecheck
+        run: pixi run typecheck
+      - name: tests (typeguard enclave)
+        run: pixi run test
+      - name: symbolic verification (CrossHair + Z3)
+        run: pixi run symbolic
+      - name: shell syntax of the build script
+        run: bash -n containers/build.sh
+
+  image:
+    # Lane 2: the recipe builds. This proves the .def and the lock agree and the fetches it names
+    # exist; it is not the published image, which is built on a compute node by build.sh and whose
+    # digest is committed beside it. Runners are root, so no --fakeroot here.
+    name: image (apptainer build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: install apptainer
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q apptainer || {
+            # Ubuntu's archive sometimes lags; fall back to the project's own release package.
+            curl -fsSL -o /tmp/apptainer.deb \
+              "https://github.com/apptainer/apptainer/releases/download/v1.3.6/apptainer_1.3.6_amd64.deb"
+            sudo apt-get install -y -q /tmp/apptainer.deb
+          }
+          apptainer --version
+      - name: build the image from the recipe
+        run: sudo bash containers/build.sh --allow-outside-slurm --out "$RUNNER_TEMP"
+      - name: smoke-test the image with the three runtime flags
+        run: |
+          sudo apptainer exec --containall --cleanenv --no-home "$RUNNER_TEMP/claude-verify.sif" \
+            python -c "import icontract, pydantic, beartype, crosshair, z3; print('substrate ok')"
+          sudo apptainer exec --containall --cleanenv --no-home "$RUNNER_TEMP/claude-verify.sif" \
+            claude --version
+      - name: the managed settings and the guard are in the image and the guard blocks
+        # The guard is run exactly as managed-settings.json names it, with the event JSON Claude
+        # Code would send; a wrong exit code here is the difference between a blocked deletion and
+        # a non-blocking error that lets it through.
+        run: |
+          sudo apptainer exec --containall --cleanenv --no-home "$RUNNER_TEMP/claude-verify.sif" \
+            python3 -c "import json; s=json.load(open('/etc/claude-code/managed-settings.json')); \
+              assert s['permissions']['disableBypassPermissionsMode']=='disable'; print('managed settings ok')"
+          set +e
+          printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/work"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
+              "$RUNNER_TEMP/claude-verify.sif" \
+              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+          rc=$?; set -e
+          test "$rc" -eq 2 && echo "guard blocks (exit 2)" || { echo "guard answered $rc, expected 2"; exit 1; }
+          printf '%s' '{"tool_name":"Bash","tool_input":{"command":"pytest -q"},"cwd":"/work"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --env CLAUDE_CONFIG_DIR=/claude \
+              "$RUNNER_TEMP/claude-verify.sif" \
+              /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
+          echo "guard allows (exit 0)"
+      - name: show what was built
+        run: cat "$RUNNER_TEMP/claude-verify.digest"

@@ -1,0 +1,61 @@
+# Deterministic environment for the Beethoven research engine (REFORMS Module: reproducibility).
+# The lock beside this file (pixi.lock) is the record: exact versions, build strings and hashes,
+# solved for the grid's platform. A run is only reproducible if it is reconstructed from the lock
+# alone, so CI installs with --locked and never re-solves silently.
+#
+# Scope note: this is the SUBSTRATE env. It carries the verification stack (Goal 1) and the dev
+# tooling the contract gate needs, and nothing else yet. The orchestrator (Metaflow, decision D3),
+# the medical stack (pydicom/MONAI, Goal 6) and the telemetry stack (W&B/CodeCarbon, Goal 2) are
+# added as their own pixi features with their own Linear issues, so this lock stays small and
+# solvable rather than pretending to pin the whole engine before it exists.
+
+[workspace]
+name = "beethoven-research"
+version = "0.0.0"
+description = "Autonomous prompt-to-paper research engine — deterministic substrate and verification stack"
+channels = ["conda-forge"]
+# linux-64 only: the engine runs inside the Apptainer image on the cluster's x86_64 compute nodes,
+# and the lock must match the platform a run actually executes on. Dev-laptop platforms (osx-arm64,
+# linux-aarch64) can be added here when someone needs them; each widens the solve and the lock.
+platforms = ["linux-64"]
+# No conda/PyPI package overlap exists in this env (CrossHair is PyPI-only and brings its own
+# z3-solver), so same-name derivation is unnecessary; disabling it also removes a solve-time
+# dependency on an external conda<->PyPI mapping host, which is one less moving part for the lock.
+conda-pypi-map = false
+
+[dependencies]
+# Pinned low bounds only; the lock pins the exact build. conda-forge is the primary channel
+# (REFORMS prefers it); the two tools that are not packaged there come from PyPI below.
+python = "3.11.*"
+pip = "*"
+# --- Goal 1: contracts and layered runtime types ---
+icontract = ">=2.6"      # Design by Contract: @require / @ensure / invariants
+pydantic = ">=2"         # external-boundary validation (O(N) coercion)
+beartype = ">=0.18"      # internal hot-path checks (amortized O(1))
+typeguard = ">=4"        # test-enclave runtime checking
+# --- dev tooling the gate runs ---
+pytest = ">=8"
+ruff = ">=0.6"           # lint + format check
+mypy = ">=1.10"          # static types, the layer above the runtime checks
+
+[pypi-dependencies]
+# The symbolic-proof layer. CrossHair is published on PyPI only (not conda-forge); it pulls in
+# z3-solver itself, so z3 is not declared separately and there is no conda/PyPI overlap to reconcile.
+crosshair-tool = ">=0.0.60"
+
+[activation]
+# The package is imported from src/ without a build step; tasks and ad-hoc `pixi run python` see it.
+env = { PYTHONPATH = "src" }
+
+[tasks]
+# The verification gate, in the order a module must clear it. CI calls `pixi run gate`; a developer
+# runs the same thing locally, so "passes in CI" and "passes on my machine" cannot diverge.
+lint = "ruff check src tests tools && ruff format --check src tests tools"
+typecheck = "mypy src"
+test = "pytest -q"
+# CrossHair proves no input satisfies a precondition while violating a postcondition, within the
+# per-function timeout. A module with no contracts is reported as such, not silently passed.
+symbolic = "python tools/verify_gate.py"
+gate = { depends-on = ["lint", "typecheck", "test", "symbolic"] }
+# The gate before every push, not only in CI: one command points git at the repository's hooks.
+hooks = "git config core.hooksPath .githooks"

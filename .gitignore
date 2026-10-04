@@ -18,6 +18,9 @@ __pycache__/
 .env.*
 *.pem
 
+# Worktrees Claude Code creates for parallel sessions and isolated subagents (docs/PARALLEL.md).
+.claude/worktrees/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db

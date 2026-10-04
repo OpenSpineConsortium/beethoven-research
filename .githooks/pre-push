@@ -1,0 +1,12 @@
+#!/bin/sh
+# The definition-of-done gate runs before every push, not only in CI (greg, project thread,
+# 2026-10-04 02:11Z): lint, typecheck, the tests under typeguard, and the CrossHair/Z3 proof of
+# every contract. A push with a red gate does not leave the machine. Skip it only knowingly,
+# with SKIP_GATE=1, and say so in the commit.
+if [ "${SKIP_GATE:-}" = 1 ]; then
+  echo "pre-push: gate skipped (SKIP_GATE=1)" >&2
+  exit 0
+fi
+cd "$(git rev-parse --show-toplevel)" || exit 1
+echo "pre-push: running the gate (pixi run gate) before the push" >&2
+exec pixi run gate

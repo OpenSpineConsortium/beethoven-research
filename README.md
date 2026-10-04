@@ -4,7 +4,8 @@ The **autonomous prompt-to-paper research engine** — the compute half of the B
 is a *peer* to the Beethoven launcher (`hpcworker` + `beethoven-extension`), not a replacement: the
 launcher is the student's interactive Remote Control worker; this engine is the headless
 `claude -p` research loop that runs as Metaflow-orchestrated Slurm jobs inside the same hermetic
-Apptainer image, under the student's **own** Claude subscription.
+Apptainer image, under the student's **own** Claude subscriptions (one or several, each in the
+student's own name).
 
 Beethoven runs Claude Code and is not an Anthropic product; "Claude" and "Claude Code" are
 Anthropic's marks, used here to say what it runs; "Open OnDemand" is the mark of its publisher.
@@ -19,17 +20,22 @@ medical calibration, publication engine) are tracked in Linear (team *Beethoven*
 G1–G7) and land as reviewed pull requests. See `/mnt/project-files/plan/BUILD_PLAN.md` in the
 project for the full plan.
 
-## What is settled (do not reopen — decided by the maintainer 2026-10-03)
+## What is settled (do not reopen — decided by the maintainer 2026-10-03 and 2026-10-04)
 
-- **D1 — the engine runs on each student's own flat-rate Claude subscription.** No pooled or
+- **D1 — the engine runs on each student's own flat-rate Claude subscriptions.** No pooled or
   commercial API keys, no LiteLLM gateway, no token or credential handling anywhere in a job. The
-  engine starts Claude Code only where the student's own sign-in already is and reads
+  engine starts Claude Code only where one of the student's own sign-ins already is and reads
   `claude auth status`; it never reads, copies, prints or relays a credential. Goal 3's token
-  economy is therefore **quota-window-aware pacing** within the student's rolling window, not key
+  economy is therefore **quota-window-aware pacing** within each account's rolling window, not key
   rotation.
 - **D2 — the engine lives in this repository.** `hpcworker` and `beethoven-extension` stay the
   launcher.
 - **D3 — orchestration is Metaflow with `metaflow-slurm`** (plain `sbatch` adapter first).
+- **D4 — several accounts of one person (2026-10-04).** A student who holds several subscriptions
+  in their own name runs them all at once, one sign-in directory and one master job per account,
+  with one account holding the super-master role at a time and handing it over as its window nears
+  its limit. The hand-off selects which sign-in directory the next job binds; no credential is ever
+  copied or swapped (that is where the engine parts from claude-swap). See `docs/ACCOUNTS.md`.
 
 These carry over `hpcworker`'s non-negotiables unchanged: no code on claude.ai and no interception
 of it; no `CLAUDE_CODE_OAUTH_TOKEN` or `setup-token` in jobs; secrets never on a command line, in
@@ -75,6 +81,9 @@ containers/                the Apptainer recipe, build script and recorded diges
 src/beethoven_research/     the engine package (contracts conventions + one worked example)
 tools/verify_gate.py        the CrossHair/Z3 contract gate CI calls
 tests/                      pytest, run under typeguard
+docs/                      ACCOUNTS.md (the sign-in path, D4); PARALLEL.md (worktrees, workflows, teams, messaging)
+.claude/agents/             the build stream: a subagent that always works in its own worktree
+.claude/workflows/          saved dynamic workflows: gate-until-green, verify-module
 .github/workflows/ci.yml    the CI lanes that enforce the definition of done
 .mcp.json                   Linear + GitHub MCP, configured from the environment (never hardcoded)
 CLAUDE.md                   the working context and the non-negotiables
