@@ -29,10 +29,14 @@ Unchanged, with the same rank as before (§17.3):
 
 ## 2. Where the sign-ins live
 
+An account is a directory, never a file moved. `bee account list` prints labels, paths and each
+directory's `claude auth status`, and nothing else until BEE-188 reads the usage window through
+Claude Code.
+
 | Directory | Which account | Made by |
 | - | - | - |
 | `$HOME/.beethoven/claude` | `main`: the launcher's own (the site profile's `claude_config_dir`; the interactive Remote Control worker) | `hpcworker claude login` |
-| `$HOME/.beethoven/accounts/main/claude` | the same `main`, reached by a link to the directory above; nothing is moved | `bee account add main` (or `ln -s` by hand) |
+| `$HOME/.beethoven/accounts/main/claude` | the same `main`: a symbolic link **from here to** `$HOME/.beethoven/claude`, made once by the sign-in command; nothing under the existing directory is moved, renamed or copied, and the profile's `claude_config_dir` is unchanged | `bee account add main` (or `ln -s` by hand) |
 | `$HOME/.beethoven/accounts/<label>/claude` | every other account, one directory each | one sitting per account (section 3) |
 
 `<label>` is the student's own word for the account: lower-case letters, digits and hyphens, at
@@ -115,10 +119,24 @@ posts "handing off to <label>" on the bus, and releases the lease naming the suc
 account with the most remaining window (or the earliest reset) that has a live master. The
 successor acquires, reads the state, announces, and continues. Every switch is logged.
 
-**What never moves is a Claude Code session.** Transcripts stay in the directory that made them;
-`--resume` and `--continue` never cross directories; the run carries over from the engine's saved
-state. Nothing is copied between sign-in directories: the only thing the hand-off changes about
-sign-ins is *which directory the next job binds*.
+**The session carries over too** (greg, 2026-10-04 03:23Z; this supersedes §17.2.4's "never a
+resumed Claude Code session" and waits on the re-plan thread's amendment of the plan). Claude Code
+resumes a session from the absolute path of its transcript file (`--resume <path>`, the CLI
+reference, read 2026-10-04), and `--fork-session` gives the continuation a new session id. The
+holder's transcript is at a path the engine computes without listing anything:
+`<its sign-in directory>/projects/<cwd slug>/<session id>.jsonl`, the session id being the one the
+job chose with `--session-id`. The successor's job binds that one file read-only
+(`--bind <path>:/handoff/<id>.jsonl:ro`) beside its own account's directory at `/claude`, and
+starts Claude Code with `--resume /handoff/<id>.jsonl --fork-session`: the continuation's
+transcript lands under the successor's directory, the holder's file is never written, and no
+credential moves. The only thing the hand-off changes about sign-ins is still *which directory the
+next job binds*, plus one transcript read. This is what claude-swap's `--share-history` is for,
+without sharing a history folder. What it costs: the first turn after the hand-off re-sends the
+whole context, because the prompt cache belongs to the account, so the holder compacts before it
+hands off when it can; the master's in-process team does not carry over (the successor re-spawns
+its teammates), satellites are registry rows and do. Whether a resume from a read-only path with
+the fork works under another account's `CLAUDE_CONFIG_DIR`, and where the fork's transcript lands,
+is not yet measured (section 9).
 
 The threshold needs a number the engine does not have yet: how Claude Code reports the remaining
 window is **not yet measured** (Linear BEE-121 measures it first; BEE-188 builds the reading).
@@ -170,7 +188,7 @@ Cloak's mechanism with claude-swap's surface.** Behaviour by behaviour:
 | `remove` | claude-swap | **adopted for the list entry only**: `bee account remove <label>` edits `accounts.json` and never deletes the directory | nothing is deleted outside our run directories |
 | `alias` | claude-swap | not needed | the label is the name |
 | `auto` with a threshold (default 90 %), `--strategy best` (most quota left) or `consume-first` (earliest reset), a cooldown (5 min) and a hysteresis margin, `--once` for cron | claude-swap | **adopted into the super-master hand-off** (section 5): threshold 90 % by default, successor = most remaining window or earliest reset, and a cooldown plus hysteresis so the lease does not flip-flop near the threshold; `--once` is the sidecar's one check per 60 s | the hand-off is the one place the engine "switches"; it moves a role, not a credential |
-| `run N --share-history` | claude-swap | **refused** | transcripts never cross directories (§17.2.4) |
+| `run N --share-history` | claude-swap | **adopted in a narrower form** (greg, 03:23Z): the successor resumes the holder's session from the absolute path of its transcript, bound read-only, with `--fork-session` (section 5) | one file crosses, read-only, at the hand-off; no history folder is shared and nothing is copied into a sign-in directory |
 | `map` / `bind` a directory to an account | claude-swap, Cloak | not adopted | the orchestrator chooses the account per job; a path never does |
 | backing up tokens, `export`/`import` of accounts, writing over the live credential, holding credential locks, refreshing a target's token before a switch | claude-swap | **refused**, all of it | every one reads, copies or writes a credential; the non-negotiable, and claude-swap's guide itself quotes the Consumer Terms on credentials |
 | quarantining an account whose refresh token has died | claude-swap | **adopted without touching anything**: an account whose `claude auth status` is not signed in is marked `enabled: false` in `accounts.json` and reported; the student signs it in again | the same effect, by the one read the rule allows |
@@ -192,3 +210,9 @@ graph at once, with a lease that moves between them (section 5). That is §17's,
   `~/.claude` (§17.4 M9); it matters for where Claude Code's own writes land, not for ours.
 - The cost in wall time of the by-hand sitting at Wayne State (the launcher's sitting is measured;
   this one is the same commands with another directory).
+- A resume from the absolute path of a transcript bound read-only, with `--fork-session`, under
+  another account's `CLAUDE_CONFIG_DIR` (section 5): whether it starts, where the fork's transcript
+  lands, and which Claude Code version added the path form (the CLI reference does not say; the
+  image installs the current release at build time).
+- How the engine learns a forked master's new session id without listing its directory (a `-p`
+  step reports it in its `init` event; an interactive master is the open case).

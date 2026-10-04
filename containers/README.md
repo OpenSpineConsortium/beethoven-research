@@ -83,8 +83,9 @@ ever chosen, and `BEETHOVEN_RUN_ROOT` are the job template's (Goal 5, Linear BEE
 `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (a dynamic workflow's agent cap) and the step's
 `--settings` value, which carries `permissions.allow: ["Workflow"]` (in `-p` the Workflow tool is a
 tool call like any other, and `dontAsk` would deny it) and `crossSessionInbound: "accept"` (a `-p`
-session otherwise holds a sibling's message for five minutes and drops it). `disableWorkflows` is
-deliberately absent from the image. `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set nowhere: in `-p`
+session otherwise holds a sibling's message for five minutes and drops it). The image's managed
+settings never set `crossSessionInbound`: a value there would override the job's, and `hold` would
+silence every engine session. `disableWorkflows` is deliberately absent from the image. `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is set nowhere: in `-p`
 no teammate is spawned whatever its value (`docs/PARALLEL.md`). The
 launcher's worker sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` *off* because Remote Control needs
 feature flags; the engine's steps do not use Remote Control, but the same four narrower switches are
