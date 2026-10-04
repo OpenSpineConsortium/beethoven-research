@@ -1,10 +1,12 @@
-"""The Beethoven research engine.
+"""The Beethoven research pipeline: REFORMS, CLAIM and the studies.
 
-Only the substrate and the verification gate exist today; see CLAUDE.md for the definition of done
-every module must clear before it may enter a run, and Linear G1-G7 for what is still to build.
+What is computed, as against how code is written and proven (beethoven-qa, pinned under
+vendor/beethoven-qa) and how agents run on the grid (beethoven-agents). The split-level check
+(``splits``) is the first module; CLAUDE.md names the definition of done every module clears before
+it may enter a run, and Linear G2, G6 and G7 what is still to build.
 """
 
 __all__ = ["__version__"]
 
-# Integer-style versions (1.0.0), never fractional; 0.0.0 while the engine is a skeleton.
+# Integer-style versions (1.0.0), never fractional; 0.0.0 while the pipeline is a skeleton.
 __version__ = "0.0.0"

@@ -5,7 +5,7 @@
 [project]
 name = "beethoven-research"
 version = "0.0.0"
-description = "Autonomous prompt-to-paper research engine: deterministic substrate and verification gate"
+description = "Beethoven research pipeline: REFORMS, CLAIM and the studies"
 requires-python = ">=3.11"
 # Runtime dependencies are pinned by pixi.lock; this list is the declared intent for readers.
 dependencies = [
@@ -15,14 +15,16 @@ dependencies = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "vendor/beethoven-qa/src"]
 testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests", "tools"]
+src = ["src", "tests"]
+# A bare `ruff check --fix .` or `ruff format .` must never rewrite the pinned copy.
+extend-exclude = ["vendor"]
 
 [tool.ruff.lint]
 # Correctness and clarity only; style churn is not a gate.
@@ -33,8 +35,23 @@ ignore = ["E731"]
 
 [tool.mypy]
 python_version = "3.11"
-mypy_path = "src"
+mypy_path = "src:vendor/beethoven-qa/src"
 packages = ["beethoven_research"]
 strict = true
 # icontract and beartype ship their own types; crosshair is a dev tool, never imported by the package.
 warn_unused_ignores = true
+
+# What `python -m beethoven_qa gate` checks in this repository (beethoven-qa docs/CONSUMING.md).
+# Nothing is exempt: the package holds logic only, and reading a study record or a corpus is a
+# boundary (pydantic) or a private, uncontracted function, never a contracted one.
+[tool.beethoven-qa]
+package = "beethoven_research"
+src = "src"
+per_condition_timeout = 20
+
+# Functions the gate never checks as targets, each with its reason (beethoven-qa
+# docs/CONSUMING.md section 3); the gate prints the list on every run. None yet: the split-level
+# check is pure. A new entry is a person's decision in a reviewed change, never a way to get green,
+# and every contracted function that calls a listed one is listed too, since CrossHair runs a
+# listed function's body when it proves its caller.
+[tool.beethoven-qa.unproven]

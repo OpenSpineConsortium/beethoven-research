@@ -1,0 +1,14 @@
+{
+  "name": "beethoven-qa",
+  "owner": {
+    "name": "OpenSpineConsortium"
+  },
+  "description": "The code-writing and verification plugin of the Beethoven engine, for any repository that runs its gate with pixi run gate. Beethoven runs Claude Code and is not an Anthropic product; \"Claude\" and \"Claude Code\" are Anthropic's marks, used here to say what it runs.",
+  "plugins": [
+    {
+      "name": "beethoven-qa",
+      "source": "./plugin",
+      "description": "Skills that state the definition of done, a build-stream agent that works in its own worktree, and workflows that fix the gate until green, prove one module, and improve one module without changing its behaviour."
+    }
+  ]
+}

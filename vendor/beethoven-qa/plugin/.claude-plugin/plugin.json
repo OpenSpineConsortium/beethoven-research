@@ -1,0 +1,8 @@
+{
+  "name": "beethoven-qa",
+  "version": "1.0.0",
+  "description": "Write Python to the Beethoven engine's definition of done and bring existing modules up to it: skills for contracts, layered runtime types and the CrossHair/Z3 gate, a build-stream agent that works in its own worktree, and the gate-until-green, verify-module and improve-module workflows.",
+  "author": {
+    "name": "Gregory Schwing (OpenSpineConsortium)"
+  }
+}

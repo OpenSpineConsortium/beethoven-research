@@ -1,9 +1,9 @@
 #!/bin/bash
 # SessionStart hook: give a Claude Code cloud session this repository's pixi environment, so
-# `pixi run gate` works there the way it does on a laptop or in CI. Outside a cloud session it
-# exits at once (the laptop's own pixi is the developer's business). Idempotent: it skips what is
-# already in place, since hooks run on every start and resume. It never exits non-zero: a missing
-# environment is reported, not turned into a session that cannot start.
+# `pixi run --locked gate` works there the way it does on a laptop or in CI. Outside a cloud
+# session it exits at once (the laptop's own pixi is the developer's business). Idempotent: it
+# skips what is already in place, since hooks run on every start and resume. It never exits
+# non-zero: a missing environment is reported, not turned into a session that cannot start.
 #
 # Scope, from the cloud-environments documentation: a session with ONE repository runs this hook
 # from .claude/settings.json; a project thread with several repositories does not read it, and
@@ -17,7 +17,7 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && [ "${BEETHOVEN_SETUP_FORCE:-}" != 
 fi
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-# The pixi that produced the committed lock (pixi.toml, containers/claude-verify.def, ci.yml agree).
+# The pixi version the committed pixi.lock was produced with.
 PIXI_VERSION=0.81.0
 BIN="$HOME/.pixi/bin"
 mkdir -p "$BIN"
@@ -49,5 +49,5 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 # The gate runs before every push (.githooks/pre-push), in a cloud session as on a laptop.
 (cd "$ROOT" && git config core.hooksPath .githooks) || true
-echo "session-start: $(pixi --version) and the locked environment are ready; run 'pixi run gate'."
+echo "session-start: $(pixi --version) and the locked environment are ready; run 'pixi run --locked gate'."
 exit 0
