@@ -169,7 +169,9 @@ def _last_match(rules: tuple[Rule, ...], rel: str, is_dir: bool) -> Rule | None:
 def ignored_by(rules: tuple[Rule, ...], rel: str, is_dir: bool) -> str:
     """The pattern that ignores ``rel`` (relative to the ignore file's folder), or "". As in git, a
     path inside an ignored folder stays ignored whatever a later ``!`` line says about it."""
-    # crosshair: per_condition_timeout=4
+    # crosshair: off
+    # Each rule carries a regular expression as data; a symbolic pattern is beyond CrossHair
+    # (0.0.111 stops with an internal error), so the tests sample this one instead.
     parts = [p for p in rel.split("/") if p and p != "."]
     for depth in range(1, len(parts)):
         hit = _last_match(rules, "/".join(parts[:depth]), True)
