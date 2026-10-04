@@ -111,6 +111,9 @@ DENIED: list[tuple[str, str]] = [
     # credentials and the sign-in directory
     ("claude setup-token", "credential"),
     ("claude auth logout", "credential"),
+    ("claude auth login", "credential"),
+    ("claude auth login --console", "credential"),
+    ("claude project purge /work", "credential"),
     ("echo $CLAUDE_CODE_OAUTH_TOKEN", "credential"),
     ("export ANTHROPIC_API_KEY=sk-xxx", "credential"),
     ("cat ~/.claude/.credentials.json", "credential"),
@@ -317,10 +320,16 @@ def test_managed_settings_name_the_guard_and_lock_what_must_stay_locked() -> Non
         "Edit(//claude/**)",
         "Bash(claude setup-token*)",
         "Bash(claude auth logout*)",
+        "Bash(claude auth login*)",
+        "Bash(claude project purge*)",
         "Bash(rm -r*)",
     ):
         assert rule in deny, rule
-    hooks = settings["hooks"]["PreToolUse"]
+    # The guard's own groups; bee's .claudeignore group beside them is tests/bee/test_image.py's.
+    hooks = [
+        h for h in settings["hooks"]["PreToolUse"]
+        if any(c["command"].endswith("/hooks/guard.py") for c in h["hooks"])
+    ]  # fmt: skip
     matchers = {h["matcher"] for h in hooks}
     assert matchers == {"Bash", "Edit|Write|NotebookEdit"}
     for h in hooks:

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# A stand-in for apptainer in bee-grid.sh's tests: records every call's argv (one call per line,
+# arguments separated by tabs), and answers the few commands the script reads back, by what follows
+# the image path. The account list lives in FAKE_ROWS_FILE (label, path, enabled per line).
+log="${FAKE_APPTAINER_LOG:?}"
+(IFS=$'\t'; printf '%s\n' "$*") >>"$log"
+image="${BEE_IMAGE:?}"
+seen=""
+cmd=()
+for a in "$@"; do
+  if [ -n "$seen" ]; then cmd+=("$a"); fi
+  if [ "$a" = "$image" ]; then seen=1; fi
+done
+joined=" ${cmd[*]-} "
+case "$joined" in
+  *" account rows "*) cat "${FAKE_ROWS_FILE:?}" 2>/dev/null ;;
+  *" account add "*)
+    label="" path="" i=0
+    while [ "$i" -lt "${#cmd[@]}" ]; do
+      case "${cmd[$i]}" in
+        add) label="${cmd[$((i + 1))]}" ;;
+        --path) path="${cmd[$((i + 1))]}" ;;
+      esac
+      i=$((i + 1))
+    done
+    printf '%s\t%s\t1\n' "$label" "$path" >>"${FAKE_ROWS_FILE:?}"
+    ;;
+  *" plan "*) printf '%s\n' "${FAKE_PLAN:?}" ;;
+  *" account status "*) exit "${FAKE_STATUS_RC:-0}" ;;
+esac
+exit 0

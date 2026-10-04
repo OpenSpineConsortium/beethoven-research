@@ -14,10 +14,12 @@ name = "beethoven-research"
 version = "0.0.0"
 description = "Autonomous prompt-to-paper research engine — deterministic substrate and verification stack"
 channels = ["conda-forge"]
-# linux-64 only: the engine runs inside the Apptainer image on the cluster's x86_64 compute nodes,
-# and the lock must match the platform a run actually executes on. Dev-laptop platforms (osx-arm64,
-# linux-aarch64) can be added here when someone needs them; each widens the solve and the lock.
-platforms = ["linux-64"]
+# linux-64 is what runs: the engine runs inside the Apptainer image on the cluster's x86_64 compute
+# nodes, and the lock must match the platform a run actually executes on. The three laptop platforms
+# were added for bee, the account switch, which runs on the student's own machine as well
+# (docs/bee/RUNBOOK.md); adding them left every linux-64 entry of the lock byte for byte as it was
+# (checked when they were added, 2026-10-04), so the image and CI reconstruct the same environment.
+platforms = ["linux-64", "win-64", "osx-arm64", "osx-64"]
 # No conda/PyPI package overlap exists in this env (CrossHair is PyPI-only and brings its own
 # z3-solver), so same-name derivation is unnecessary; disabling it also removes a solve-time
 # dependency on an external conda<->PyPI mapping host, which is one less moving part for the lock.
@@ -59,3 +61,6 @@ symbolic = "python tools/verify_gate.py"
 gate = { depends-on = ["lint", "typecheck", "test", "symbolic"] }
 # The gate before every push, not only in CI: one command points git at the repository's hooks.
 hooks = "git config core.hooksPath .githooks"
+# bee, the account switch and the hand-off file (src/beethoven_research/bee, docs/bee/): the same
+# command on a laptop and, through bee-grid.sh, in the image on a compute node.
+bee = "python -m beethoven_research.bee"

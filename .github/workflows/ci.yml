@@ -89,5 +89,27 @@ jobs:
               "$RUNNER_TEMP/claude-verify.sif" \
               /opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py
           echo "guard allows (exit 0)"
+      - name: bee's hooks and grid script run against the image
+        # The hooks exactly as the managed settings name them, with the events Claude Code would
+        # send: the ignore hook refuses the sign-in file, the session hook writes its record into
+        # the bound project. Then bee-grid.sh itself, with the engine bound read-only, lists the
+        # (empty) account list through the image's python (docs/bee/RUNBOOK.md).
+        run: |
+          proj="$RUNNER_TEMP/proj"; mkdir -p "$proj"
+          img="$RUNNER_TEMP/claude-verify.sif"
+          py=/opt/beethoven-research/.pixi/envs/default/bin/python
+          printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/claude/.credentials.json"},"cwd":"/work"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --bind "$proj:/work" "$img" \
+              $py /opt/beethoven-research/hooks/claudeignore.py | grep '"deny"'
+          printf '%s' '{"hook_event_name":"SessionStart","source":"startup","session_id":"s1","cwd":"/work","transcript_path":"/claude/projects/-work/s1.jsonl"}' | \
+            sudo apptainer exec --containall --cleanenv --no-home --bind "$proj:/work" --env BEE_ACCOUNT=ci "$img" \
+              $py /opt/beethoven-research/hooks/handoff.py session-start
+          sudo python3 -c "import json,sys; d=json.load(open(sys.argv[1])); \
+            assert d['transcript_path']=='/claude/projects/-work/s1.jsonl' and d['account']=='ci', d; print('session record ok')" \
+            "$proj/.claude/state/session.json"
+          sudo env SLURM_JOB_ID=ci USER=root HOME="$RUNNER_TEMP/home" BEE_IMAGE="$img" \
+            bash src/beethoven_research/bee/bee-grid.sh list | tee "$RUNNER_TEMP/bee-list.txt"
+          grep -q "No accounts yet" "$RUNNER_TEMP/bee-list.txt"
+          test ! -e /tmp/root/bee_ci && echo "node-local temp removed"
       - name: show what was built
         run: cat "$RUNNER_TEMP/claude-verify.digest"

@@ -4,8 +4,10 @@
 # job sees nothing of the host's environment or home beyond what it binds on purpose.
 #
 # What the image never contains: a Claude credential, an API key, a token of any kind. The student's
-# own sign-in directory is bound read-only at run time and named by CLAUDE_CONFIG_DIR, exactly as
-# the launcher's worker does; the image only provides the binaries. The engine's own code is also
+# own sign-in directory is bound at run time and named by CLAUDE_CONFIG_DIR, exactly as the
+# launcher's worker does (read-write, because Claude Code keeps its transcripts and its refreshed
+# sign-in there; containers/README.md says what fences the engine out); the image only provides the
+# binaries. The engine's own code is also
 # bound at run time at a pinned git SHA (the Run ID records it) rather than baked in, so a code
 # change does not mean an image rebuild and the image hash means "the substrate", not "this commit".
 
@@ -21,6 +23,10 @@ From: ubuntu:24.04
     # without them (containers/managed-settings.json, src/beethoven_research/guard.py).
     containers/managed-settings.json /etc/claude-code/managed-settings.json
     src/beethoven_research/guard.py /opt/beethoven-research/hooks/guard.py
+    # bee's state hooks and status line, which the managed settings also name (the session record,
+    # the git state, the usage window, .claudeignore; docs/bee/STATE_HANDOFF.md). Both stand alone.
+    src/beethoven_research/bee/handoff.py /opt/beethoven-research/hooks/handoff.py
+    src/beethoven_research/bee/claudeignore.py /opt/beethoven-research/hooks/claudeignore.py
 
 %post
     set -eu
@@ -56,11 +62,23 @@ From: ubuntu:24.04
     # Policy and guard: world-readable, never writable, and the guard answers before the image is
     # called good (a guard that cannot start would let every call through as a non-blocking error).
     chmod 0644 /etc/claude-code/managed-settings.json
-    chmod 0755 /opt/beethoven-research/hooks/guard.py
+    chmod 0755 /opt/beethoven-research/hooks/guard.py \
+        /opt/beethoven-research/hooks/handoff.py /opt/beethoven-research/hooks/claudeignore.py
     python3 -c "import json; json.load(open('/etc/claude-code/managed-settings.json'))"
     printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"cwd":"/work"}' \
         | CLAUDE_CONFIG_DIR=/claude /opt/beethoven-research/.pixi/envs/default/bin/python \
             /opt/beethoven-research/hooks/guard.py && exit 1 || test $? -eq 2
+    # bee's hooks start with the image's python: the ignore hook refuses the sign-in file, and a
+    # state hook answers exit 0 even with nowhere to write (state upkeep never stops a session).
+    printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"/x/.credentials.json"},"cwd":"/"}' \
+        | /opt/beethoven-research/.pixi/envs/default/bin/python \
+            /opt/beethoven-research/hooks/claudeignore.py | grep -q '"deny"'
+    hookdir="$(mktemp -d)"
+    printf '{"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":"%s"}' \
+        "$hookdir" | /opt/beethoven-research/.pixi/envs/default/bin/python \
+            /opt/beethoven-research/hooks/handoff.py session-start | grep -q additionalContext
+    test -f "$hookdir/.claude/state/session.json"
+    rm -rf "$hookdir"
 
 %environment
     export LC_ALL=C.UTF-8
@@ -84,6 +102,6 @@ From: ubuntu:24.04
 %help
     The Beethoven research engine's substrate image. Run with
         apptainer exec --containall --cleanenv --no-home \
-            --bind <checkout>:/work --bind <claude_config_dir>:/claude:ro \
+            --bind <checkout>:/work --bind <claude_config_dir>:/claude \
             --env CLAUDE_CONFIG_DIR=/claude <image>.sif <command>
     See containers/README.md. Beethoven runs Claude Code and is not an Anthropic product.
