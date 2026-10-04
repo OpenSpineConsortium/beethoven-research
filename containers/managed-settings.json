@@ -4,7 +4,10 @@
     "Baked into the substrate image at /etc/claude-code/managed-settings.json (Linux's managed path),",
     "the top of Claude Code's settings precedence: no project, user or --settings file loosens a rule",
     "here. It carries only what must never be loosened: the deny rules, the bypass lock, the hard",
-    "timeouts and memory cap, no self-update of a read-only image, no telemetry, and the guard hook.",
+    "timeouts and memory cap, no self-update of a read-only image, no telemetry, the guard hook, and",
+    "bee's state hooks and status line (src/beethoven_research/bee, docs/bee/STATE_HANDOFF.md), which",
+    "record the session, the git state and the usage window in the run directory and read nothing",
+    "inside the sign-in directory.",
     "Everything a job tunes per step (effort level, subagent concurrency, the auto-compact window,",
     "the run directory) stays OUT of this file, because an env value here overwrites the same",
     "variable exported by the job. Names checked against code.claude.com/docs on 2026-10-04.",
@@ -24,7 +27,8 @@
       "Bash(sacctmgr *)", "Bash(scontrol update*)", "Bash(scontrol hold*)", "Bash(scontrol release*)",
       "Bash(scontrol requeue*)", "Bash(scontrol reconfigure*)", "Bash(scontrol cancel*)",
       "Bash(scancel -A *)", "Bash(scancel --account*)", "Bash(scancel -p *)", "Bash(scancel --partition*)",
-      "Bash(claude setup-token*)", "Bash(claude auth logout*)",
+      "Bash(claude setup-token*)", "Bash(claude auth logout*)", "Bash(claude auth login*)",
+      "Bash(claude project purge*)",
       "Read(//claude/**)", "Read(~/.claude/**)", "Read(**/.credentials.json)", "Read(**/.claude.json)",
       "Read(~/.ssh/**)", "Read(**/.env)", "Read(**/.env.*)", "Read(**/*.pem)", "Read(**/id_rsa*)",
       "Read(**/id_ed25519*)", "Read(**/.netrc)",
@@ -53,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py",
             "timeout": 10
           }
         ]
@@ -63,11 +67,85 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python /opt/beethoven-research/hooks/guard.py",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/guard.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|LS",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/claudeignore.py",
             "timeout": 10
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact|fork|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py session-start",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py post-tool-use",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py pre-compact",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py stop-failure",
+            "timeout": 30
+          }
+        ]
+      }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/opt/beethoven-research/.pixi/envs/default/bin/python -I /opt/beethoven-research/hooks/handoff.py statusline",
+    "padding": 0
   }
 }

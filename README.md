@@ -36,6 +36,7 @@ project for the full plan.
   with one account holding the super-master role at a time and handing it over as its window nears
   its limit. The hand-off selects which sign-in directory the next job binds; no credential is ever
   copied or swapped (that is where the engine parts from claude-swap). See `docs/ACCOUNTS.md`.
+  The switch itself is built: `bee` (below).
 
 These carry over `hpcworker`'s non-negotiables unchanged: no code on claude.ai and no interception
 of it; no `CLAUDE_CODE_OAUTH_TOKEN` or `setup-token` in jobs; secrets never on a command line, in
@@ -66,6 +67,19 @@ pixi run gate                # lint + typecheck + tests + the symbolic verificat
 pixi run symbolic            # just the CrossHair/Z3 gate
 ```
 
+## Switching accounts: `bee`
+
+`bee` lists the student's own Claude accounts, one sign-in directory each, and moves a piece of work
+from one to the next with the State Management guide's hand-off file, the same way on a laptop
+(Windows, macOS, Linux) and on a compute node inside the image (`bee-grid.sh`). Setup and daily use:
+`docs/bee/RUNBOOK.md`; what was taken from the guide and what was changed: `docs/bee/STATE_HANDOFF.md`.
+
+```sh
+bee account add work         # Claude Code's own sign-in, once, into ~/.beethoven/accounts/work/claude
+bee run work                 # Claude Code on that account, with the hand-off hooks and status line
+bee continue                 # after a usage limit or /handoff: the next account picks up the work
+```
+
 The Apptainer image is built and run on the cluster, never on the login node:
 
 ```sh
@@ -76,12 +90,13 @@ bash containers/build.sh                 # apptainer build --fakeroot; records t
 ## Layout
 
 ```
-pixi.toml / pixi.lock      the deterministic substrate (conda-forge + PyPI, linux-64)
+pixi.toml / pixi.lock      the deterministic substrate (conda-forge + PyPI; linux-64 runs, three laptop platforms for bee)
 containers/                the Apptainer recipe, build script and recorded digest
-src/beethoven_research/     the engine package (contracts conventions + one worked example)
+src/beethoven_research/     the engine package (contracts conventions, one worked example, the guard)
+src/beethoven_research/bee/ bee: accounts, the hand-off hooks, .claudeignore, the grid script (self-contained)
 tools/verify_gate.py        the CrossHair/Z3 contract gate CI calls
 tests/                      pytest, run under typeguard
-docs/                      ACCOUNTS.md (the sign-in path, D4); PARALLEL.md (worktrees, workflows, teams, messaging)
+docs/                      ACCOUNTS.md (the sign-in path, D4); PARALLEL.md (worktrees, workflows, teams, messaging); bee/
 .claude/agents/             the build stream: a subagent that always works in its own worktree
 .claude/workflows/          saved dynamic workflows: gate-until-green, verify-module
 .github/workflows/ci.yml    the CI lanes that enforce the definition of done

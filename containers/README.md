@@ -70,8 +70,9 @@ or `--settings` file says loosens it. It carries only what must never be loosene
 | Locked in the image | Why |
 | - | - |
 | `permissions.disableBypassPermissionsMode: "disable"` | no step runs with permissions off |
-| `permissions.deny`: recursive and forced deletion, privilege and system commands, daemons and mass kills, remote shells and transfers, scheduler administration and other people's jobs, history rewrites, `claude setup-token`, `claude auth logout`; `Read` of the sign-in directory, credential files, `.env`, keys; `Edit` of the sign-in directory, `/etc`, `/usr`, `/opt`, `/var`, `/boot` | the non-negotiables, as prefix rules; a `Read` deny also blocks `Edit` and `Write` on the path |
+| `permissions.deny`: recursive and forced deletion, privilege and system commands, daemons and mass kills, remote shells and transfers, scheduler administration and other people's jobs, history rewrites, `claude setup-token`, `claude auth logout`, `claude auth login`, `claude project purge`; `Read` of the sign-in directory, credential files, `.env`, keys; `Edit` of the sign-in directory, `/etc`, `/usr`, `/opt`, `/var`, `/boot` | the non-negotiables, as prefix rules; a `Read` deny also blocks `Edit` and `Write` on the path |
 | `allowManagedHooksOnly: true` and the PreToolUse guard on `Bash` and `Edit\|Write\|NotebookEdit` | the guard sees the whole command and the resolved path, which prefix rules cannot; no project hook replaces it |
+| bee's hooks (`SessionStart`, `PostToolUse` async, `PreCompact`, `Stop`, `StopFailure`, the `.claudeignore` `PreToolUse`) and status line, baked at `/opt/beethoven-research/hooks/` and run with `python -I` | every session records its id, account and transcript path, keeps the git state file current and records a usage limit where it happens, in the project or run directory; the Stop prompt to refresh the hand-off file speaks only when a job sets `BEETHOVEN_HANDOFF_GATE=1` (`docs/bee/STATE_HANDOFF.md`) |
 | `env`: `BASH_DEFAULT_TIMEOUT_MS` 10 min, `BASH_MAX_TIMEOUT_MS` 30 min, `MCP_TIMEOUT`, `MCP_TOOL_TIMEOUT`, `MAX_MCP_OUTPUT_TOKENS`, `CLAUDE_CODE_TOOL_MEMORY_LIMIT=16G`, `DISABLE_AUTOUPDATER`, `DISABLE_UPDATES`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `CLAUDE_CODE_DISABLE_ARTIFACT`, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH=1` | every step bounded; a read-only image never tries to update itself; nothing published to claude.ai from a job; no nested subagent trees |
 
 What is **not** in the file, on purpose: anything a job tunes per step. An `env` value in managed
@@ -97,7 +98,8 @@ Apptainer on the grid is not yet measured, and the container is the isolation la
 ## The guard
 
 `src/beethoven_research/guard.py` is baked at `/opt/beethoven-research/hooks/guard.py` and run with
-the image's own python. It reads the PreToolUse event on stdin and answers 0 (allowed), 2 (blocked,
+the image's own python, isolated (`python -I`, like bee's hooks), so neither `PYTHONPATH` nor a
+module file in the bound project can stand in for one the guard imports. It reads the PreToolUse event on stdin and answers 0 (allowed), 2 (blocked,
 reason on stderr, which the model reads) or a JSON `ask` for the two borderline cases
 (`scancel -u`, `sbatch --wrap`), which a `dontAsk` batch step turns into a refusal. Any failure
 inside the guard blocks the call. It is a contracted module like every other: beartype on the

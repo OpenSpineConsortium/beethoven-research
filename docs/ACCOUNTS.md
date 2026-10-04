@@ -29,9 +29,10 @@ Unchanged, with the same rank as before (§17.3):
 
 ## 2. Where the sign-ins live
 
-An account is a directory, never a file moved. `bee account list` prints labels, paths and each
-directory's `claude auth status`, and nothing else until BEE-188 reads the usage window through
-Claude Code.
+An account is a directory, never a file moved. `bee account list` prints labels, paths, who rests
+until when and the last usage readings (section 5); `bee account status` asks each directory's
+`claude auth status`. Both are built (`src/beethoven_research/bee/`, 2026-10-04; the commands are
+in `docs/bee/RUNBOOK.md`).
 
 | Directory | Which account | Made by |
 | - | - | - |
@@ -41,10 +42,15 @@ Claude Code.
 
 `<label>` is the student's own word for the account: lower-case letters, digits and hyphens, at
 most 32 characters (`main`, `second`, `lab-2`). The engine's list of accounts is `accounts.json`
-(label, directory path, enabled, order, and nothing from inside any directory; beside the
-`accounts/` folder at `$HOME/.beethoven/accounts.json`, this file's choice of place). `order` is
-the rotation order; `enabled: false` takes an account out of the rotation without signing anything
-out. `claude auth status` per directory is the only read, as the credential rule already allows.
+(label, directory path, enabled, order, rest-until, and nothing from inside any directory) at
+`$HOME/.beethoven/engine/accounts.json`, mode 0600, beside `usage/` (one reading per account) and
+`switches.log`. It is a folder of its own, not `$HOME/.beethoven/accounts.json` as this file first
+said, because the grid script binds that one folder into the image and `$HOME/.beethoven` itself
+holds the launcher's sign-in, which no container may see except as `/claude`. `order` is the
+rotation order; `enabled: false` takes an account out of the rotation without signing anything
+out. `claude auth status` per directory is the only read, as the credential rule already allows. An
+account may also be "Claude Code's default place" (`CLAUDE_CONFIG_DIR` unset, `--default-location`)
+on a laptop, never `~/.claude` named explicitly (`docs/bee/STATE_HANDOFF.md` section 2 says why).
 
 ## 3. One sitting per account, once
 
@@ -56,10 +62,13 @@ launcher's second step (`claude remote-control` once, answer y, Ctrl-C) follows 
 sitting; an account that only runs `-p` satellites needs no second step.
 
 The one line, typed in the portal's shell, the extension's connect or the desktop plugin
-(BUILD_PLAN §17.2.1): `bee account add <label>` (the engine, Linear BEE-185) or
-`hpcworker claude login --account <label>` (the framework). Neither is built yet. Until one is,
-the sitting is typed by hand inside an interactive allocation on a compute node (the launcher's
-own sitting makes one; at Wayne State the test partition is `secp` with `--qos=secondary`):
+(BUILD_PLAN §17.2.1): `bee account add <label>` on a laptop and `bee-grid.sh add <label>` on a
+compute node (the engine, Linear BEE-185; **built** 2026-10-04: the grid form runs the sitting
+inside the engine's image with that one directory bound at `/claude`, `docs/bee/RUNBOOK.md` G4), or
+`hpcworker claude login --account <label>` (the framework; not built, a contract item for
+`hpcworker`). Where neither the engine's image nor its checkout is at hand, the sitting can still be
+typed by hand inside an interactive allocation on a compute node (the launcher's own sitting makes
+one; at Wayne State the test partition is `secp` with `--qos=secondary`):
 
 ```sh
 label=second                                 # the student's word for this account
@@ -102,6 +111,12 @@ once.
   does not die, it hibernates until the reset; its unfinished tasks are reassigned by the
   super-master when they cannot wait. Never a retry loop, never a switch of account inside a
   running step.
+- Every session in the image runs bee's hooks, named by the managed settings (`docs/bee/`): the
+  `SessionStart` hook records the session id, the account label and the transcript's path in the
+  run directory's `state/session.json`; `PostToolUse` keeps `PROJECT_STATE.md` current from git;
+  `StopFailure` writes `limit.json` when a turn ends on a usage limit (with the reset time when the
+  status line has seen one); the status line writes the account's reading to
+  `$HOME/.beethoven/engine/usage/<label>.json`. None of them opens anything inside a sign-in directory.
 
 ## 5. The super-master lease and the hand-off (§17.2.4)
 
@@ -112,7 +127,8 @@ damage the state. The holder owns the run-level task graph and assigns work to t
 messages.
 
 Hand-off triggers, in order: the holder's account at or past the usage threshold (90 % by default,
-claude-swap's number, tunable) once usage is readable; the usage-limit error itself; wall time
+claude-swap's number, tunable) once usage is readable (an interactive master reads it through the
+status line, below); the usage-limit error itself (`limit.json`); wall time
 within the margin; the lease expiring unrenewed (a crash). The holder finishes or checkpoints its
 turn, writes the top-level state (task graph, roster, `STATUS.md`, open questions) with its token,
 posts "handing off to <label>" on the bus, and releases the lease naming the successor: the enabled
@@ -144,9 +160,26 @@ saved results are not restored, so a workflow run stays on one account; a master
 re-registers under the new account, so greg opens claude.ai signed in to that account. Not built
 until probe M13 (section 9) is on record; BUILD_PLAN §17.2.9 is the plan's text for it.
 
-The threshold needs a number the engine does not have yet: how Claude Code reports the remaining
-window is **not yet measured** (Linear BEE-121 measures it first; BEE-188 builds the reading).
-Until then the hand-off is reactive (the usage-limit error) and nothing here claims a figure.
+**What carries the work: the hand-off file first, the transcript second** (greg's 04:12Z ask, the
+State Management guide; `docs/bee/STATE_HANDOFF.md`). Before the switch the holder writes the
+guide's six-section hand-off file (`state/claude_context.md`: objective, decisions, files and their
+state, milestones, exact blockers, three to five next actions), prompted once by bee's Stop hook
+when the window reaches the threshold or a commit made the file stale; the successor starts with
+"Read `state/HYDRATE.md` and follow it", which validates the file against the disk before acting.
+It costs a few thousand tokens where a resumed transcript re-sends the whole context uncached,
+works across machines, claude.ai and Claude Code versions, and needs no probe; the transcript
+resume above stays the second carrier (`bee continue --fork`), for when the conversation itself
+matters, until M13 is on record. Both are built for the interactive switch (`bee continue`,
+`bee-grid.sh continue`); the lease that will call them is not (BEE-189).
+
+**The usage reading** (BEE-121, BEE-188): Claude Code hands every status-line command the account's
+`rate_limits.five_hour` and `seven_day`, each with `used_percentage` and `resets_at` (Pro and Max
+plans, after the session's first response; status line page, read 2026-10-04). bee's status line
+records that reading per account, and `bee continue --strategy best|consume-first`, the Stop gate
+and the rest-until-reset all use it. The status line runs only in interactive sessions, so a master
+under a pseudo-terminal has the reading and a `-p` satellite does not (it has `StopFailure`'s
+`rate_limit` error and nothing earlier). That a Max plan on the grid delivers these fields is not
+yet measured, so nothing here claims a figure from it.
 
 ## 6. Why not claude-swap's way
 
@@ -189,17 +222,17 @@ Cloak's mechanism with claude-swap's surface.** Behaviour by behaviour:
 | concurrent sessions, each terminal on its own account through its own environment variable | Cloak, claude-swap `run N` | **adopted**: every master and satellite is one session under one account's directory | "multiple accounts work together" is several sessions at once, not one credential swapped under one session |
 | profile name validation, 0700 directories, tokens never logged or transmitted | Cloak | **adopted** (labels: lower-case letters, digits, hyphens; `chmod 700`) | |
 | `add` | both | **adopted as `bee account add <label>`**, which is the sign-in sitting of section 3, never "register the currently logged-in account" by copying its credential | the student signs in once per account; nothing of ours reads the result |
-| `list` dashboard: each account's 5-hour and 7-day usage with reset times | claude-swap | **adopted as `bee account list`**, read through Claude Code itself (§17.2.8, BEE-121 and BEE-188), never through a token | the numbers are what the lease needs; how Claude Code exposes them is not yet measured |
+| `list` dashboard: each account's 5-hour and 7-day usage with reset times | claude-swap | **built as `bee account list`**, from the readings bee's status line records (section 5), never through a token | the numbers are what the lease needs; an interactive session reports them, a `-p` step does not |
 | `status`, `enable`, `disable` | claude-swap | **adopted** (`bee account status`, `enable <label>`, `disable <label>` edit `accounts.json`'s `enabled`) | a disabled account leaves the rotation without a sign-out |
 | `remove` | claude-swap | **adopted for the list entry only**: `bee account remove <label>` edits `accounts.json` and never deletes the directory | nothing is deleted outside our run directories |
 | `alias` | claude-swap | not needed | the label is the name |
-| `auto` with a threshold (default 90 %), `--strategy best` (most quota left) or `consume-first` (earliest reset), a cooldown (5 min) and a hysteresis margin, `--once` for cron | claude-swap | **adopted into the super-master hand-off** (section 5): threshold 90 % by default, successor = most remaining window or earliest reset, and a cooldown plus hysteresis so the lease does not flip-flop near the threshold; `--once` is the sidecar's one check per 60 s | the hand-off is the one place the engine "switches"; it moves a role, not a credential |
+| `auto` with a threshold (default 90 %), `--strategy best` (most quota left) or `consume-first` (earliest reset), a cooldown (5 min) and a hysteresis margin, `--once` for cron | claude-swap | **built for the interactive switch** (`bee continue --strategy`, `accounts.py` `choose_next`, `should_hand_off`: threshold 90 %, 5-point margin, 5-minute cooldown) and **adopted into the super-master hand-off** (section 5), where the same functions choose the successor; `--once` is the sidecar's one check per 60 s | the hand-off is the one place the engine "switches"; it moves a role, not a credential |
 | `run N --share-history` | claude-swap | **adopted in a narrower form** (greg, 03:23Z): the successor resumes the holder's session from the absolute path of its transcript, bound read-only, with `--fork-session` (section 5) | one file crosses, read-only, at the hand-off; no history folder is shared and nothing is copied into a sign-in directory |
 | `map` / `bind` a directory to an account | claude-swap, Cloak | not adopted | the orchestrator chooses the account per job; a path never does |
 | backing up tokens, `export`/`import` of accounts, writing over the live credential, holding credential locks, refreshing a target's token before a switch | claude-swap | **refused**, all of it | every one reads, copies or writes a credential; the non-negotiable, and claude-swap's guide itself quotes the Consumer Terms on credentials |
-| quarantining an account whose refresh token has died | claude-swap | **adopted without touching anything**: an account whose `claude auth status` is not signed in is marked `enabled: false` in `accounts.json` and reported; the student signs it in again | the same effect, by the one read the rule allows |
+| quarantining an account whose refresh token has died | claude-swap | **built without touching anything**: an account whose `claude auth status` does not answer "signed in with a claude.ai subscription, in this directory" is marked `enabled: false` in `accounts.json` and reported; the student signs it in again (`bee account login <label>`) | the same effect, by the one read the rule allows |
 | `tui` / `watch`, the live dashboard | claude-swap | the client's: the extension's status view and the desktop plugin read the per-account fields the master writes to `status.json` (the desktop thread's proposal) | the engine writes the numbers; the clients draw them |
-| `purge` | claude-swap | **refused** | nothing of ours deletes a sign-in directory, ever |
+| `purge` | claude-swap | **refused**, and the guard and the image's deny rules now also refuse Claude Code's own `claude project purge` inside a job | nothing of ours deletes a sign-in directory, or anything Claude Code keeps in one, ever |
 | keep Claude Code's "infrastructure" (CLAUDE.md, agents, skills, commands, hooks, rules, settings) in a private git repository; exclude `.credentials.json`, transcripts, history | the backup post | **adopted and already so**: this repository holds the engine's `CLAUDE.md`, `.claude/agents`, `.claude/workflows`, hooks and settings; nothing inside a sign-in directory is ever backed up by us | the post's exclusion list is the list of what we never touch; a student's own backup of their directories is their business |
 | IDE extensions ignore `CLAUDE_CONFIG_DIR` (Cloak's known limitation) | Cloak | noted for the desktop thread | the engine runs Claude Code's CLI in jobs, where the variable is honoured; a client that embeds Claude Code must be checked |
 
@@ -208,8 +241,9 @@ graph at once, with a lease that moves between them (section 5). That is §17's,
 
 ## 9. Not yet measured
 
-- How Claude Code reports the remaining usage window from a `-p` step and from a session under a
-  pseudo-terminal (BEE-121; §17.4 M4).
+- How Claude Code reports the remaining usage window from a `-p` step (BEE-121; §17.4 M4). An
+  interactive session, which a master under a pseudo-terminal is, reports it to the status line
+  (section 5); that the fields arrive on the grid is the first check of `docs/bee/RUNBOOK.md`.
 - Whether a second `claude auth login` of an account already signed in elsewhere behaves as a
   plain second session (expected from the laptop-and-phone case; not run on the grid).
 - Whether the team directories (`teams/`, `tasks/`) follow `CLAUDE_CONFIG_DIR` rather than

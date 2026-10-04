@@ -66,7 +66,8 @@ TRIGGER_TOKENS: tuple[str, ...] = (
     "nohup", "setsid", "disown", "at", "crontab", "pkill", "killall", "kill", ":()",
     "ssh", "scp", "sftp", "nc", "ncat", "telnet", "socat", "rsync", "curl", "wget",
     "sacctmgr", "scontrol", "scancel", "sbatch", "array",
-    "setup", "logout", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+    "setup", "logout", "login", "purge",
+    "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
     "credentials", "CLAUDE_CONFIG_DIR",
 )  # fmt: skip
 
@@ -232,13 +233,15 @@ _COMMAND_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "credential or sign-in directory",
         re.compile(
             r"\bsetup-token\b"
-            r"|\bclaude +auth +logout\b"
+            r"|\bclaude +auth +(?:logout|login)\b"
+            r"|\bclaude +project +purge\b"
             r"|\b(?:CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN)\b"
             r"|\.credentials\.json"
             r"|\bCLAUDE_CONFIG_DIR\b"
         ),
-        "Beethoven never reads, prints, copies or relays a Claude credential, and never signs the "
-        "student out; claude auth status is the only question asked of the sign-in",
+        "Beethoven never reads, prints, copies or relays a Claude credential, never signs the "
+        "student in or out and never purges what Claude Code keeps there; claude auth status is "
+        "the only question asked of the sign-in",
     ),
     (
         "secret in sbatch --export",

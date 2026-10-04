@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# A stand-in for Claude Code in bee's tests. `auth status --json` answers from a marker file in the
+# directory it is given, `auth login` makes that marker, and anything else records its argv and
+# the variables bee is meant to set or strip, then exits.
+log="${FAKE_CLAUDE_LOG:?}"
+dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if [ "${1:-}" = auth ] && [ "${2:-}" = status ]; then
+  if [ -f "$dir/.fake-signed-in" ]; then
+    printf '{"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "firstParty", '
+    printf '"configDirectory": "%s", "email": "%s@example.org", "subscriptionType": "max"}\n' \
+      "$dir" "$(cat "$dir/.fake-signed-in")"
+    exit 0
+  fi
+  printf '{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty", '
+  printf '"configDirectory": "%s"}\n' "$dir"
+  exit 1
+fi
+if [ "${1:-}" = auth ] && [ "${2:-}" = login ]; then
+  mkdir -p "$dir"
+  echo "${BEE_ACCOUNT:-someone}" >"$dir/.fake-signed-in"
+  echo "login $dir" >>"$log"
+  exit 0
+fi
+{
+  printf 'argv'
+  printf ' [%s]' "$@"
+  printf '\n'
+  for v in CLAUDE_CONFIG_DIR BEE_ACCOUNT BEETHOVEN_HANDOFF BEETHOVEN_HANDOFF_GATE BEE_THRESHOLD \
+    ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+    printf 'env %s=%s\n' "$v" "${!v-<unset>}"
+  done
+} >>"$log"
+if [ -n "${FAKE_CLAUDE_HIT_LIMIT:-}" ]; then
+  mkdir -p "$FAKE_CLAUDE_HIT_LIMIT"
+  printf '{"account": "%s", "session_id": "s-limit", "five_hour_resets_at": 0}\n' \
+    "${BEE_ACCOUNT:-}" >"$FAKE_CLAUDE_HIT_LIMIT/limit.json"
+fi
+exit 0
