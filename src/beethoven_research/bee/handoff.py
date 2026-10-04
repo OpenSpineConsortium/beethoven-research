@@ -204,6 +204,12 @@ def _clip(line: str, width: int = 160) -> str:
     return line if len(line) <= width else line[: width - 1] + "…"
 
 
+def _flat(text: str, width: int) -> str:
+    """One line of plain text: control characters become spaces (CrossHair found a reset time
+    with a newline in it breaking the status line's one line)."""
+    return _clip("".join(c if " " <= c != "\x7f" else " " for c in text), width)
+
+
 def _bounded(lines: tuple[str, ...], most: int) -> list[str]:
     shown = [_clip(x) for x in lines[:most]]
     if len(lines) > most:
@@ -575,9 +581,9 @@ def statusline_text(
     def paint(text: str, code: str) -> str:
         return f"\033[{code}m{text}\033[0m" if color else text
 
-    parts = [paint(f"bee:{_clip(label or 'unnamed', 32)}", "1")]
+    parts = [paint(f"bee:{_flat(label or 'unnamed', 32)}", "1")]
     if five_pct >= 0:
-        resets = f" until {_clip(five_resets, 16)}" if five_resets else ""
+        resets = f" until {_flat(five_resets, 16)}" if five_resets else ""
         text = f"5h {five_pct}%{resets}"
         parts.append(
             paint(text, "31" if five_pct >= threshold else "33" if five_pct >= 75 else "32")

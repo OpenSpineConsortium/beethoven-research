@@ -150,6 +150,7 @@ class AuthVerdict:
 )
 def valid_label(label: str) -> bool:
     """Lower-case letters, digits and hyphens, at most 32 characters, as docs/ACCOUNTS.md says."""
+    # crosshair: per_condition_timeout=4
     return (
         1 <= len(label) <= MAX_LABEL and label[0] != "-" and all(c in _LABEL_CHARS for c in label)
     )
@@ -162,6 +163,7 @@ def valid_label(label: str) -> bool:
 )
 def is_absolute(path: str) -> bool:
     """Whether ``path`` is absolute on either family of systems, without asking the filesystem."""
+    # crosshair: per_condition_timeout=4
     if path[:1] in ("/", "\\"):
         return True
     return len(path) >= 3 and path[0].isalpha() and path[1:3] in (":\\", ":/")
@@ -259,6 +261,12 @@ def set_hibernation(accounts: tuple[Account, ...], label: str, until: int) -> tu
 )
 def eligible(account: Account, now: int) -> bool:
     """Whether an account may take the next session at ``now``."""
+    return _awake(account, now)
+
+
+def _awake(account: Account, now: int) -> bool:
+    # The plain form the other functions call: a call to a contracted function inside a body that
+    # CrossHair is proving made its exploration non-deterministic (seen on choose_next, 2026-10-04).
     return account.enabled and account.hibernate_until <= now
 
 
@@ -293,7 +301,7 @@ def _candidates(
         a
         for a in cyclic
         if a.label != current
-        and eligible(a, now)
+        and _awake(a, now)
         and _window(usage, a.label, now)[0] < threshold - hysteresis
         and not _weekly_spent(usage, a.label, now)
     )
@@ -374,6 +382,7 @@ def should_hand_off(
 ) -> bool:
     """Whether the account in use should hand over now: at the limit, or at the threshold once the
     cooldown since the last switch has passed."""
+    # crosshair: per_condition_timeout=4
     return limit_hit or (used_pct >= threshold and since_switch_s >= cooldown_s)
 
 
@@ -393,6 +402,7 @@ def hibernate_until(
 ) -> int:
     """When a spent account wakes: the weekly reset when the 7-day window is spent, else the
     5-hour window's own reset when Claude Code gave one, else one whole 5-hour window from now."""
+    # crosshair: per_condition_timeout=4
     if weekly_pct >= 100 and weekly_resets_at > now:
         return weekly_resets_at
     return resets_at if resets_at > now else now + FALLBACK_REST_S
@@ -410,6 +420,7 @@ def hibernate_until(
 )
 def env_pairs(account: Account) -> tuple[tuple[str, str | None], ...]:
     """The two variables that make a session this account's: name and value, None to unset."""
+    # crosshair: per_condition_timeout=4
     return (("CLAUDE_CONFIG_DIR", account.path), ("BEE_ACCOUNT", account.label))
 
 
