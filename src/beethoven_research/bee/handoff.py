@@ -26,9 +26,11 @@ session, and a failure is written to the state folder's ``hook-errors.log`` inst
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -438,14 +440,14 @@ def parse_context(text: str) -> ContextReport:
 def describe_context(report: ContextReport | None, path: str, written: str) -> str:
     """The one line that rides in the state file and the injection about the hand-off file."""
     # crosshair: per_condition_timeout=2
-    where = _clip(path.replace("\n", " "), 200)
+    where = _flat(path, 200)
     if report is None:
         return f"hand-off file {where}: absent; write it with /handoff before this account stops"
     state = "complete" if report.ok else f"missing sections {list(report.missing)}"
     extra = f"; {len(report.repairs)} repairs" if report.repairs else ""
     return (
-        f"hand-off file {where}: written {_clip(written.replace(chr(10), ' '), 30)}, phase "
-        f"{report.phase}, {state}, {report.next_actions} next actions, {report.size} bytes{extra}"
+        f"hand-off file {where}: written {_flat(written, 30)}, phase {_flat(report.phase, 40)}, "
+        f"{state}, {report.next_actions} next actions, {report.size} bytes{extra}"
     )
 
 
@@ -577,6 +579,10 @@ def gate_feedback(
 
 @beartype
 @require(lambda threshold: 1 <= threshold <= 100, "a percentage")
+@require(
+    lambda five_pct, seven_pct, context_pct: max(five_pct, seven_pct, context_pct) <= 100,
+    "percentages, at most 100",
+)
 @ensure(lambda result: "\n" not in result and len(result) <= 400, "one short line")
 def statusline_text(
     label: str,
@@ -1010,6 +1016,15 @@ def _int(raw: object, default: int) -> int:
         return default
 
 
+def _pct(raw: object) -> int:
+    """A percentage Claude Code sent, as 0 to 100; -1 when it is not a number."""
+    try:
+        value = float(str(raw))
+    except ValueError:
+        return -1
+    return max(0, min(100, round(value))) if math.isfinite(value) else -1
+
+
 def _statusline(payload: dict[str, object], env: dict[str, str]) -> str:
     limits = payload.get("rate_limits")
     limits = limits if isinstance(limits, dict) else {}
@@ -1018,14 +1033,14 @@ def _statusline(payload: dict[str, object], env: dict[str, str]) -> str:
         w = limits.get(name)
         if not isinstance(w, dict) or w.get("used_percentage") is None:
             return -1, 0
-        return round(float(w["used_percentage"])), _int(w.get("resets_at"), 0)
+        return _pct(w["used_percentage"]), _int(w.get("resets_at"), 0)
 
     five, five_reset = window("five_hour")
     seven, seven_reset = window("seven_day")
     ctx_raw = payload.get("context_window")
     ctx = -1
     if isinstance(ctx_raw, dict) and ctx_raw.get("used_percentage") is not None:
-        ctx = round(float(ctx_raw["used_percentage"]))
+        ctx = _pct(ctx_raw["used_percentage"])
     label = env.get("BEE_ACCOUNT", "")
     workspace = payload.get("workspace")
     project = (
@@ -1058,14 +1073,16 @@ def _statusline(payload: dict[str, object], env: dict[str, str]) -> str:
                 _log_error(project, env, "statusline", exc)
     resets = ""
     if five_reset:
-        resets = _dt.datetime.fromtimestamp(five_reset).strftime("%H:%M")
+        with contextlib.suppress(OverflowError, OSError, ValueError):
+            resets = _dt.datetime.fromtimestamp(five_reset).strftime("%H:%M")
+    threshold = _int(env.get("BEE_THRESHOLD"), DEFAULT_THRESHOLD)
     return statusline_text(
         label,
         five,
         resets,
         seven,
         ctx,
-        _int(env.get("BEE_THRESHOLD"), DEFAULT_THRESHOLD),
+        threshold if 1 <= threshold <= 100 else DEFAULT_THRESHOLD,
         color=env.get("NO_COLOR") is None,
         step=_next_step(project, env),
     )

@@ -168,6 +168,14 @@ def test_parse_repairs_slips_and_reports_gaps() -> None:
     assert any("bytes" in w for w in big.warnings)
 
 
+def test_the_hand_off_line_stays_one_line() -> None:
+    # CrossHair in CI: a phase with a newline in it split the line the state file carries.
+    report = h.ContextReport(True, "a\nb", "", (), (), (), 0, (), (), 0)
+    line = h.describe_context(report, "x\ry.md", "\x00now\n")
+    assert line.startswith("hand-off file") and "\n" not in line and "\r" not in line
+    assert "phase a b," in line
+
+
 def test_prompts_carry_the_schema_and_the_validation_step() -> None:
     cli = h.extraction_prompt("/s/claude_context.md", web=False)
     assert "/s/claude_context.md" in cli and "## 5. Active Blockers & Errors" in cli
@@ -213,6 +221,22 @@ def test_status_line() -> None:
     assert "/compact" in h.statusline_text("b", 10, "", -1, 65, 90, color=False)
     assert h.statusline_text("", -1, "", -1, -1, 90, color=False) == "bee:unnamed"
     assert "\033[" in h.statusline_text("b", 92, "", -1, -1, 90, color=True)
+
+
+def test_status_line_survives_odd_numbers(tmp_path: Path) -> None:
+    # CrossHair: a percentage too long to print within the bound broke the one short line.
+    env = {"NO_COLOR": "1", "BEETHOVEN_STATE_DIR": str(tmp_path / "s"), "BEE_THRESHOLD": "500"}
+    payload: dict[str, object] = {
+        "rate_limits": {
+            "five_hour": {"used_percentage": 1e300, "resets_at": 10**30},
+            "seven_day": {"used_percentage": "nan"},
+        },
+        "context_window": {"used_percentage": "not a number"},
+        "cwd": str(tmp_path),
+    }
+    line = h._statusline(payload, env)
+    assert line.startswith("bee:unnamed · 5h 100% · ") and len(line) <= 400
+    assert "7d" not in line and "ctx" not in line and "bee continue" in line
 
 
 # --- the hooks, end to end in a scratch repository ---------------------------------------------
