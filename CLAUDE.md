@@ -28,24 +28,23 @@ Anthropic product; "Claude" and "Claude Code" are Anthropic's marks, used here t
   quota-window-aware pacing, not routing. A person may hold several such plans and run them all (D4).
 - **D2 — the engine is this repository.** The launcher stays in its two repositories.
 - **D3 — Metaflow + `outerbounds/metaflow-slurm`**, with a plain `sbatch` adapter underneath first.
-- **D4 — several accounts of one person; one master per account; one super-master at a time**
+- **D4 — several accounts of one person; one master per account; one super-master lease at a time**
   (greg, 2026-10-04 02:30Z, after the card of 02:18Z; the one-account rule of the day before is
-  withdrawn). A person who holds several Claude subscriptions in their own name runs them all at
-  once: each account has its own sign-in directory on the grid (section "Accounts and sign-in") and
-  its own master node, a Slurm job that owns that account's sessions and agents; exactly one account
-  holds the super-master mutex, and the mutex moves to another account as the holder nears its
-  usage window, in the style of claude-swap. What moves is the role and the saved top-level state,
-  never a credential: the engine chooses which account's sign-in directory the next job binds and
-  nothing else (claude-swap's backing up and restoring of credential files is exactly what the
-  non-negotiable below forbids, so it is not the mechanism). No account is ever used by anyone but
-  its holder, and usage credits are never used on any of them. The design (one master per account,
-  teams of teams across accounts, every session and agent reported to the super-master by message
-  passing, new sessions as new Slurm jobs, no session or agent ever orphaned) is BUILD_PLAN §17 and
-  Linear BEE-185, the re-plan thread's; this file carries the rule and the sign-in path. Record, not
-  a gate: Anthropic's Usage Policy of 2025-09-15 (read 2026-10-04) lists under "Do Not Abuse our
-  Platform" intentionally bypassing capabilities, restrictions or guardrails established within its
-  products, and its Consumer Terms of 2025-10-08 forbid sharing an account or making it available to
-  anyone else, which this design does not do; greg decided with both on the table.
+  withdrawn; the design is BUILD_PLAN §17, the re-plan thread's, and this file follows it). Several
+  of greg's own accounts run at once, each signed in by him into its own directory
+  (`$HOME/.beethoven/accounts/<label>/claude`; the launcher's `$HOME/.beethoven/claude` is the
+  account `main`, reached by a link, nothing moved), one master job per account, one account holding
+  the super-master lease (greg's word: the mutex) at a time and handing it to the next as its window
+  nears its limit; the run carries over from the engine's saved state, never a resumed Claude Code
+  session. The engine holds directory paths and labels only (`accounts.json`: label, path, enabled,
+  order), never looks inside or copies between them (claude-swap's credential backup is exactly what
+  we do not do; the switch is `CLAUDE_CONFIG_DIR` selection for the next session), logs every switch,
+  and never uses anyone else's account. No pooled tokens, nothing that evades detection, usage
+  credits never on any account; a spent account hibernates until its reset. Record, not a gate:
+  Anthropic's Usage Policy of 2025-09-15 (read 2026-10-04) lists under "Do Not Abuse our Platform"
+  intentionally bypassing capabilities, restrictions or guardrails established within its products,
+  and its Consumer Terms of 2025-10-08 forbid sharing an account or making it available to anyone
+  else, which this design does not do; greg decided with both on the table (BUILD_PLAN D1d, §17).
 
 ## Non-negotiables (carried from the launcher; they bind the engine too)
 
@@ -178,25 +177,28 @@ overwrites the same variable a job exports, so the image holds only what is neve
 
 ## Accounts and sign-in (D4)
 
-The whole of it is `docs/ACCOUNTS.md`; the rule in four lines:
+The whole of it is `docs/ACCOUNTS.md` and BUILD_PLAN §17.2.1; the rule in four lines:
 
-- One sign-in directory per account: `$HOME/.beethoven/accounts/<label>/claude`, where `<label>` is
-  the student's own word for the account (letters, digits and hyphens; the sorted labels are the
-  rotation order). The launcher's own directory, `$HOME/.beethoven/claude` (the profile's
-  `claude_config_dir`), stays the launcher's.
-- One sitting per account, on a compute node inside the image, never on the login node:
-  `claude auth login` with `CLAUDE_CONFIG_DIR` set to that directory. The launcher's sitting
-  (`hpcworker claude login`) is the model; an `--account <label>` option on it is the launcher's
-  contract item (hpcworker, not yet built), and until it lands the sitting is typed as
-  `docs/ACCOUNTS.md` shows.
-- The engine's account list is the set of labelled directories whose `claude auth status` answers
-  signed in; a job binds exactly one of them at `/claude` (the bind in `containers/README.md`), the
-  orchestrator chooses which, and a directory that is not signed in is skipped and reported, never
-  repaired. Nothing of ours reads, copies, moves or links anything inside those directories.
-- The super-master mutex is a file under the run root naming the holder's label and the time; a
-  hand-off writes the new holder and the saved top-level state, and the next job binds the new
-  holder's directory. How Claude Code reports the remaining window is not yet measured (BEE-121),
-  so the hand-off threshold is the plan's to set once it is.
+- One sign-in directory per account: `$HOME/.beethoven/accounts/<label>/claude`, `<label>` the
+  student's own word (lower-case letters, digits and hyphens). The launcher's own directory,
+  `$HOME/.beethoven/claude` (the profile's `claude_config_dir`), is the account `main`, reached by a
+  link; nothing is moved. `accounts.json` lists label, path, enabled and order, and nothing from
+  inside any directory.
+- One sitting per account, once: `bee account add <label>` (engine, Linear BEE-185) or
+  `hpcworker claude login --account <label>` (framework), both the launcher's one sitting on a
+  compute node under that `CLAUDE_CONFIG_DIR` (`claude auth login`, paste the code; then
+  `claude remote-control` once when the account will run a master with Remote Control). Neither is
+  built yet; until then the sitting is typed as `docs/ACCOUNTS.md` shows. No sign-out is ever
+  needed: "use another account" is "add an account".
+- A job binds exactly one account's directory at `/claude` (the bind in `containers/README.md`),
+  the orchestrator chooses which, and `claude auth status` is the only read; a directory that is not
+  signed in is skipped and reported, never repaired. Nothing of ours reads, copies, moves or links
+  anything inside those directories.
+- The super-master lease is one row in the engine store, taken by compare-and-set with a fencing
+  token and renewed every 60 s; the hand-off writes the top-level state, names the successor and
+  releases, and the successor's job, on its own account's directory, reads the state and continues.
+  Every switch is logged. The usage threshold (90 % by default, claude-swap's number) waits on how
+  Claude Code reports the window, not yet measured (BEE-121, BEE-188).
 
 ## Parallel work: worktrees, workflows, teams and messaging
 
@@ -217,23 +219,34 @@ against the worktrees, workflows, agent-teams, cross-session-messaging and agent
   can be resumed) and runs as `/<name>`. Fan-out inside a workflow is capped by
   `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`, 1000 agents per run and 4096 items per call; a
   silent cap is never written, a dropped item is logged.
-- **Agent teams are interactive only.** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` makes a named
-  subagent a teammate in an interactive session; in `-p` no teammate is ever spawned, a session has
-  one team, a teammate cannot spawn a team, and the lead is fixed. So the engine's teams of teams
-  are not Claude Code teams: a team is a set of Slurm jobs, each one session, and the team of teams
-  is the super-master over the masters (D4, BUILD_PLAN §17). A person's own interactive session on
-  a laptop may run a Claude Code team; the engine's jobs do not.
-- **Messages are plain text and never consent.** Sessions in one container on one node reach each
-  other over Claude Code's own socket (`/tmp/cc-socks-<uid>`, on the node-local `/tmp` the job
-  binds); a session in a container and one on the host, or sessions on two nodes, do not. Across
-  nodes the engine's message passing is files under the run root (`status.json` is the launcher's
-  model), read at the 60 s floor. A message from another session cannot approve anything, change
-  settings or run a command, and nothing of ours asks another session to do what its own session
-  was refused.
-- **No orphans.** Every session and agent a master starts is written to the master's registry under
-  the run root before it starts and marked ended when it ends; the super-master's view is the union;
-  a job's exit trap reports its sessions. `-p` leaves worktrees and their locks behind, so a step
-  that made one removes it by name before the job ends (its own run artefact, never another's).
+- **Agent teams need an interactive session.** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` makes a
+  named subagent a teammate in an interactive session; in `-p` no teammate is ever spawned, a
+  session has one team, a teammate cannot spawn a team, and the lead is fixed. So (BUILD_PLAN
+  §17.2.2 and §17.2.3) a **master** is an interactive Claude Code session under a pseudo-terminal in
+  its Slurm job, that account's one team lead, with in-process teammates only, never tmux; a `-p`
+  step never leads a team; a **satellite** is a new Slurm job a master asks for through the engine's
+  own tool, registered before its first turn, under the same account; a satellite that leads a team
+  of its own is the team of teams, and a team whose members belong to several accounts exists only
+  at the engine layer, joined by the task graph and the bus. Whether a session under a
+  pseudo-terminal driven only through its inbox socket spawns teammates is not yet measured (§17.4
+  M1).
+- **Messages are plain text and never consent.** On one node: Claude Code's own mailbox inside a
+  team and the per-session socket (`/tmp/cc-socks-<uid>`, on the node-local `/tmp` the job binds);
+  a session in a container and one on the host, or sessions on two nodes, do not reach each other
+  over it. Across nodes and accounts: the engine's bus (the store's `messages` and `registry`
+  tables, an append-only inbox file per session on the lab volume as the fallback), carried into
+  each session by a sidecar that posts into its inbox socket with the session's own token; across
+  nodes for one account, Remote Control carries notices. A message from another session cannot
+  approve anything, change settings or run a command; every message is logged; nothing of ours asks
+  another session to do what its own session was refused.
+- **No orphans** (§17.2.6). One registry row per session (run, account, job id, node, session id,
+  parent, role, heartbeat, state), written before the session's first turn; a lead shuts its
+  teammates down before it exits; a master's exit path tells its satellites to finish and then
+  cancels, through the adapter, only the job ids the registry says are its own; a satellite whose
+  parent's heartbeat lapses asks the super-master for adoption; the reaper reconciles the registry
+  against one `squeue` per 60 s floor; a session the reaper closed is an INTERVENTIONS failure row.
+  `-p` leaves worktrees and their locks behind, so a step that made one removes it by name before
+  the job ends (its own run artefact, never another's).
 
 ## The engine is itself the subject of a methods paper (added 2026-10-04)
 

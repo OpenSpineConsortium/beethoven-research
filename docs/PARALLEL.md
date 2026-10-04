@@ -17,7 +17,7 @@ Anthropic's marks, used here to say what it runs.
 | - | - | - |
 | Subagents | workers inside one session, own context, return a summary | inside a step and inside a build session; the only fan-out a `-p` step has |
 | Agent view | one screen to dispatch and watch background sessions on a machine | a person's laptop only |
-| Agent teams | a lead session supervising peer sessions, shared task list, messaging; experimental, interactive only | a person's laptop only; never an engine job (section 4) |
+| Agent teams | a lead session supervising peer sessions, shared task list, messaging; experimental, interactive only | a master's in-process team on its node (tier 1, BUILD_PLAN §17.2.3); never from a `-p` step (section 4) |
 | Projects | threads in the cloud or over Remote Control, from claude.ai/code | the build itself (this project) |
 | Dynamic workflows | a script that runs many subagents and cross-checks them; runs in `-p` too | repeatable orchestration, saved in `.claude/workflows/` |
 
@@ -141,32 +141,46 @@ measured and is the first thing to measure. `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT
 the job to the allocation's cores, beside `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`. The image sets
 nothing of this; `disableWorkflows` is deliberately absent from it.
 
-**Agent teams are not available to a step.** The agent-teams page is plain: spawning teammates
+**Teams: what a batch job can and cannot have.** The agent-teams page is plain: spawning teammates
 requires an interactive session; in `-p` (and the Agent SDK) Claude spawns no teammate and a named
 subagent runs as an ordinary subagent. A session has exactly one team, a teammate cannot spawn a
 team ("no nested teams"), the lead is fixed, in-process teammates do not survive a resume, and the
-mailbox is a JSON file under the sign-in directory's `teams/` on one machine. So the engine's team
-of teams is built from what *is* available to a batch job:
+mailbox is a JSON file on one machine. BUILD_PLAN §17.2.2 and §17.2.3 build on exactly that, in two
+tiers:
 
-- a **session** is one `claude -p` step in one Slurm job (a new session is a new job, which is what
-  greg asked for);
-- a **team** is the set of sessions one master job started and registered;
-- a **team of teams** is the super-master over the masters, one master per account (decision D4,
-  `docs/ACCOUNTS.md`), the design in BUILD_PLAN §17 and Linear BEE-185.
+- **Tier 1, Claude Code's own.** A **master** is the launcher's worker shape under one account: an
+  always-on Slurm job running an *interactive* Claude Code session under a pseudo-terminal (the way
+  the launcher's `claude remote-control` already runs, measured 2026-09-29), with
+  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, `crossSessionInbound: accept`, in-process teammates only
+  and never tmux, CPUs sized for its teammates. It is that account's one team lead. Its lead hooks
+  carry the engine's gates (`TaskCompleted` runs the verification gate on the task's files;
+  `TeammateIdle` refuses idleness with open assigned tasks). A `claude -p` step never leads a team.
+- **Tier 2, the engine's.** A **satellite** is a new Slurm job a master asks for through the engine's
+  own tool (role, prompt, account, resources), submitted through the adapter (one `sbatch` per
+  action, never from a teammate's shell) and registered with its parent before its first turn. It
+  runs under the same account's directory, as `claude -p` for a bounded step or as an interactive
+  session under a pseudo-terminal when it needs teammates of its own; a satellite that leads a team
+  is the **team of teams**. A team whose members belong to several accounts exists only at this
+  tier: its members are sessions under different masters, joined by one task graph in the engine
+  store and by the bus, never by one Claude Code team config. Metaflow's `-p` steps stay the
+  deterministic pipeline; masters and satellites are the agentic layer those steps call on.
 
-A person's own interactive session on a laptop may set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
-and run a Claude Code team; with it on, every subagent Claude names becomes a teammate, so it is a
-user setting, not this repository's.
+Whether an interactive session under a pseudo-terminal, driven only through its inbox socket with
+no keyboard, spawns teammates is not yet measured (§17.4 M1; the page says interactive, not
+attended). A person's own laptop session may run a Claude Code team the ordinary way; the setting is
+a user setting, not this repository's.
 
 **Messages.** Cross-session messaging is on by itself from Claude Code 2.1.224; a `-p` session
-binds an inbox socket like an interactive one (bare mode does not). Where a message can travel:
+binds an inbox socket like an interactive one (bare mode does not). Three channels and one bridge
+(BUILD_PLAN §17.2.5):
 
 | Sender and receiver | Path |
 | - | - |
-| two sessions in the same container on one node | the per-session Unix socket under `/tmp/cc-socks-<uid>` (the node-local `/tmp` the job binds); never through Anthropic servers |
+| inside one team on one node | Claude Code's own mailbox files |
+| two sessions in the same container on one node | the per-session Unix socket under `/tmp/cc-socks-<uid>` (the node-local `/tmp` the job binds); never through Anthropic servers. Whether two Apptainer instances on one node see each other's sockets, and whether a session with another `CLAUDE_CONFIG_DIR` is listed, are not yet measured (§17.4 M2, M3) |
 | a session in a container and one on the host | cannot reach each other |
-| sessions on two nodes | cannot reach each other over the socket; a session beyond the machine is found only through Remote Control with a claude.ai sign-in, which the engine's steps do not use |
-| the engine's masters and the super-master | files under the run root (the launcher's `status.json` is the model), read at the 60 s floor; never faster, never a scheduler query in a loop |
+| sessions on two nodes, one account | Remote Control through Anthropic servers, when both ends are connected; used for notices, not as the bus |
+| across nodes and accounts | **the engine's bus**: `messages` and `registry` tables in the engine store with `LISTEN/NOTIFY`, and an append-only inbox file per session on the lab volume as the fallback while the store is down. The **bridge** is a sidecar per session in the job script: it reads the bus and posts into the local session's inbox socket with the session's own token (`CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`; in the image Claude Code may be process 1, so the token line is always sent), and carries outbound messages from the engine's send tool to the bus. Each master reports its roster to the super-master this way |
 
 Rules the receiving side applies, which our code relies on and never argues with: a message from
 another session is never the person's consent, cannot answer a permission prompt, cannot change
@@ -174,15 +188,24 @@ settings or `CLAUDE.md`, and a slash command in it is plain text. A `-p` session
 `crossSessionInbound: "accept"` in its `--settings` holds a message five minutes and drops it, so a
 step that should listen carries that setting. A same-machine message is refused above about a
 million characters; bursts to one inbox are refused at the sender; loops are throttled at the
-receiver. Nothing of ours asks another session to do what its own session was refused. Whether the
-socket works inside Apptainer with `--containall` and a bound `/tmp` is not yet measured.
+receiver. Every message is plain text, under a megabyte, carries no secret, and is logged to the
+run's record. Nothing of ours asks another session to do what its own session was refused.
 
-**No orphans** (greg, 02:30Z). A master writes each session and agent it starts into its registry
-under the run root *before* starting it (job id, account label, step, start time) and marks it
-ended when it ends; the super-master's view of the whole is the union of the registries; a job's
-exit trap writes its sessions' end states even when the job is killed for wall time; a successor
-job reads the registry first and adopts or ends what its predecessor left. A session that is not in
-a registry is a bug, not a stray.
+**No orphans** (greg, 02:30Z; BUILD_PLAN §17.2.6). One registry row per session: run, account, job
+id, node, session id, process id, parent session, role (master, satellite, teammate), heartbeat,
+state. The invariants, each with a test: every session has a parent or is a master, and every Slurm
+job of a run is in the registry *before* its first turn (the job script registers; submission only
+through the adapter); tier 1 teammates live and die with their lead, which asks each to shut down
+and waits before it exits, and never tmux; a master's exit path (the wall-time signal, the stop
+file) tells its satellites to finish within a grace period, then cancels, through the adapter, only
+the job ids the registry says are its own; a satellite whose parent's heartbeat lapses asks the
+super-master for adoption, and stops after its turn if not adopted; the super-master's reaper
+reconciles the registry against one `squeue` per 60 s floor while a run is live and against
+`sacct` at the end; at run end every registered job is stopped, every row closed, the counts go to
+the ledger, and a session closed by the reaper rather than by its parent is an INTERVENTIONS
+failure row; the hand-off never strands a session, since the roster moves with the state. A session
+that is not in a registry is a bug, not a stray.
+
 
 ## 5. Before writing a parallel part, check
 

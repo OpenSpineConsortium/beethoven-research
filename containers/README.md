@@ -50,7 +50,7 @@ apptainer exec --containall --cleanenv --no-home \
 - `--containall --cleanenv --no-home`: no host environment variables, no home directory, no stray
   mounts. The recipe's `%environment` additionally unsets every credential variable it knows of.
 - One of the student's own Claude sign-in directories, the account the orchestrator chose for this
-  job (`$ACCOUNT` is its label; `docs/ACCOUNTS.md`, D4), is bound **read-write** and named by
+  job (`$ACCOUNT` is its label and the path is `accounts.json`'s; `docs/ACCOUNTS.md`, D4), is bound **read-write** and named by
   `CLAUDE_CONFIG_DIR`, because Claude Code writes its state there: the session transcripts,
   `.claude.json`, and the credential it refreshes itself (the launcher's worker binds it the same
   way). What keeps the engine out of it is not a mount flag but three lines of policy: the managed
