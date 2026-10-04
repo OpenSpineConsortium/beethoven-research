@@ -102,28 +102,28 @@ measures it first); nothing here should claim a number for it.
 ## The engine is itself the subject of a methods paper (added 2026-10-04)
 
 The build and every run are measured so the whole thing can be written up as a protocol / methods
-paper whose contribution is a relatively undirected agent on a shared academic grid (BUILD_PLAN
-§12; greg's message of 2026-10-04). Three things follow for code written here:
+paper whose contribution is a relatively undirected agent on a shared academic grid (the prior-work note under the project's plan folder, pending its fold into
+BUILD_PLAN.md; greg's message of 2026-10-04). Three things follow for code written here:
 
 - **Every long-running step declares its progress signal.** Anthropic's "Long-running Claude for
   Scientific Computing" (2026-03-23) puts it plainly: long autonomous scientific work depends on the
   agent having some way to tell whether it is making progress — a reference implementation, a
   clearly quantifiable objective, or an existing test suite — and on committing after each
   meaningful unit of work. A `claude -p` step without a declared signal is not scheduled (Linear
-  G5-7); the peeking Claude and the run index read that signal, never guess from logs.
+  G5-7, BEE-178); the peeking Claude and the run index read that signal, never guess from logs.
 - **Human interventions are first-class data.** When a person steps in — to restart a stuck step,
   redefine a search space, correct a result — it is logged then and there (what the agent was
-  doing, why, what changed, outcome), never reconstructed afterwards (Linear M-5). Prior work
+  doing, why, what changed, outcome), never reconstructed afterwards (Linear M-5, BEE-174). Prior work
   found such interventions frequent; their count is a headline number of the paper, so it must be
   honest.
 - **Each run records its compute and quota spend** beside its Run ID: Slurm job ids, partition and
   QoS, wall time requested and used, GPU-hours, preemptions, tokens in and out, cache hit-rate,
-  compaction events, subagent count, energy (Linear M-6).
+  compaction events, subagent count, energy (Linear G5-8, BEE-179).
 
 Prompts, instruction files (this one included), agent logs, job scripts and git history are the
 paper's record; keep them whole and never trim them for tidiness. The cluster's acceptable-use
 position on autonomous agents and the paper's AI-use disclosure are the maintainer's hand step
-(Linear M-8) and gate the first unattended run.
+(Linear M-8, BEE-177) and gate the first unattended run.
 
 ## Build and test
 
@@ -132,6 +132,11 @@ pixi install --locked     # reconstruct the exact env from the lock; CI uses --l
 pixi run gate             # lint (ruff) + typecheck (mypy) + tests (pytest) + symbolic (CrossHair/Z3)
 pixi run symbolic         # just the gate
 ```
+
+A Claude Code cloud session gets the same environment from `.claude/hooks/session-start.sh`
+(installs pixi 0.81.0 and runs `pixi install --locked`; cloud sessions only, idempotent). That hook
+runs in a session with one repository; a project thread with several repositories does not read it
+and needs the same commands as the environment's setup script.
 
 Anything that runs a container, a scheduler call or Claude Code runs on the grid inside a Slurm job,
 never on the login node and never on a laptop. The Apptainer image (`containers/claude-verify.def`)
