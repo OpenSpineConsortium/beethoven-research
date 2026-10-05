@@ -42,6 +42,15 @@ typeguard = ">=4"        # test-enclave runtime checking
 pytest = ">=8"
 ruff = ">=0.6"           # lint + format check
 mypy = ">=1.10"          # static types, the layer above the runtime checks
+# --- the code standards (beethoven-qa's docs/STANDARDS.md), the same lines as beethoven-qa's
+# pixi.toml: each tool runs as its own process and is read through its JSON output; ruff above
+# serves the readability group as well.
+complexipy = ">=8"       # readability: cognitive complexity (Campbell, SonarSource)
+radon = ">=6"            # design: McCabe complexity per method, the weights of WMC
+bandit = ">=1.9"         # security: weaknesses mapped to CWE
+coverage = ">=7.10"      # coverage: line coverage of the tests, read for the new lines only
+pyyaml = ">=6"           # supply chain: the workflow files
+types-pyyaml = ">=6"     # mypy's stubs for pyyaml
 
 [pypi-dependencies]
 # The symbolic-proof layer. CrossHair is published on PyPI only (not conda-forge); it pulls in
@@ -66,6 +75,10 @@ test = "pytest -q"
 symbolic = "python -m beethoven_qa gate"
 # The pinned copy still hashes to its ORIGIN and the kit files equal the copy's.
 vendor-check = "python -m beethoven_qa vendor-check"
-gate = { depends-on = ["lint", "typecheck", "test", "symbolic", "vendor-check"] }
+# The code standards, each group on its own (beethoven-qa's docs/STANDARDS.md), on the code new
+# since where this branch left the remote's default branch; CI runs each group as its own job
+# (the kit's standards.yml).
+standards = "python -m beethoven_qa standards all"
+gate = { depends-on = ["lint", "typecheck", "test", "symbolic", "standards", "vendor-check"] }
 # The gate before every push, not only in CI: one command points git at the repository's hooks.
 hooks = "git config core.hooksPath .githooks"
