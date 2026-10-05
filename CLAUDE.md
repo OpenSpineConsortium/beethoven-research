@@ -130,6 +130,17 @@ new entry is a person's decision in a reviewed change, never a way to get green,
 contracted function that calls a listed one is listed too, since CrossHair runs the listed body
 when it proves the caller. The list is empty today: the first module is pure.
 
+**The code standards** (beethoven-qa 2.0.0, its `docs/STANDARDS.md`; greg, 2026-10-04 23:26Z):
+beside the definition of done, which says whether code is correct, six groups hold this
+package's new code to limits that say whether a person can read it, change it and trust what
+built it: readability, design, duplication, coverage, security and supply chain.
+`pixi run --locked standards` runs them against where the branch left `main` (the gate runs it
+too); the kit's `standards.yml` runs one CI job per group, and `standards (every group green)` is
+a required check. Only what a change makes new or worse blocks; no setting, configuration file or
+suppression comment here loosens a limit, which changes only in a release of beethoven-qa. The
+`code-standards` skill (`vendor/beethoven-qa/plugin/skills/`) says how to write to them and how
+to answer a failure.
+
 ## REFORMS and the first module (Goal 2)
 
 - **The split level per corpus** (patient, study, cadaver or CT source volume) is written in the
@@ -178,13 +189,15 @@ position on autonomous agents and the paper's AI-use disclosure are the maintain
 
 ```sh
 pixi install --locked         # reconstruct the exact env from the lock; CI uses --locked too
-pixi run --locked gate        # lint + typecheck + tests + symbolic (beethoven-qa's gate) + vendor-check
+pixi run --locked gate        # lint + typecheck + tests + symbolic (beethoven-qa's gate) + standards + vendor-check
 pixi run --locked symbolic    # just the CrossHair/Z3 gate: python -m beethoven_qa gate
+pixi run --locked standards   # the code standards, every group, against where this branch left main
 pixi run --locked vendor-check  # the pinned copy still matches its ORIGIN, the kit files equal the copy's
 ```
 
-The pinned copy and the four kit files (`.githooks/pre-push`, `.github/workflows/automerge.yml`,
-`.github/workflows/rulesets.yml`, `.claude/hooks/session-start.sh`) are never edited here; a change
+The pinned copy and the five kit files (`.githooks/pre-push`, `.github/workflows/automerge.yml`,
+`.github/workflows/rulesets.yml`, `.claude/hooks/session-start.sh`,
+`.github/workflows/standards.yml`) are never edited here; a change
 is made in beethoven-qa, released, and taken with its `vendor` command (beethoven-qa
 `docs/CONSUMING.md`, "Updating to a new release"). The lock changes only on purpose, by pixi, in a
 change that says so (the slimming of 2026-10-04 re-locked for `linux-64` alone, and the `linux-64`
@@ -202,10 +215,11 @@ is pushed: every ref must be the checkout's HEAD and the tree must hold nothing 
 (untracked files count), or it refuses and says so; from a linked worktree it drops the `GIT_DIR`
 git hands a hook before the gate runs. `SKIP_GATE=1` skips all of it knowingly, and the commit
 says why. On GitHub the same gate is the required check on `main`: the rule lives in
-`.github/rulesets/main.json` (deletion and force-push blocked; the `gate` lane must be green, by
-its exact job name; organization admins bypass) and is applied by the kit's `rulesets.yml`, so
-whether a pull request lands is decided by the tests, with no review step and no human click once
-auto-merge is armed on it. Pull requests are opened ready for review, never as drafts.
+`.github/rulesets/main.json` (deletion and force-push blocked; the `gate` lane and
+`standards (every group green)` must be green, by their exact job names; organization admins
+bypass) and is applied by the kit's `rulesets.yml`, so whether a pull request lands is decided by
+the tests, with no review step and no human click once auto-merge is armed on it. Pull requests
+are opened ready for review, never as drafts.
 
 Anything that runs a container, a scheduler call or Claude Code runs on the grid inside a Slurm job,
 never on the login node and never on a laptop. The image is beethoven-agents' (`containers/` there);
@@ -227,10 +241,11 @@ of that work, and new work on those parts goes to their repositories:
 
 ## Layout
 
-- `pixi.toml` / `pixi.lock` — the verification stack beethoven-qa's gate needs, the same lines as
-  beethoven-qa's, pinned for `linux-64` (the three laptop platforms left with bee). The medical
-  (pydicom/MONAI, Goal 6) and telemetry (W&B/CodeCarbon, Goal 2) stacks are added as their own
-  pixi features with their own Linear issues, each in a change that re-locks on purpose.
+- `pixi.toml` / `pixi.lock` — the verification stack and the code standards' tools beethoven-qa's
+  gate needs, the same lines as beethoven-qa's, pinned for `linux-64` (the three laptop platforms
+  left with bee). The medical (pydicom/MONAI, Goal 6) and telemetry (W&B/CodeCarbon, Goal 2)
+  stacks are added as their own pixi features with their own Linear issues, each in a change that
+  re-locks on purpose.
 - `src/beethoven_research/` — the package: `splits.py` (the split-level check). The REFORMS
   record, the CLAIM checklist, the study code and the publication engine land here.
 - `vendor/beethoven-qa/` — the pinned copy of beethoven-qa (`ORIGIN`, the package, the plugin, the

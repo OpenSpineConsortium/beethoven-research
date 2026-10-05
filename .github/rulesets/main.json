@@ -33,6 +33,10 @@
           {
             "context": "gate (lock → lint, typecheck, tests, CrossHair/Z3, vendor-check)",
             "integration_id": 15368
+          },
+          {
+            "context": "standards (every group green)",
+            "integration_id": 15368
           }
         ]
       }
