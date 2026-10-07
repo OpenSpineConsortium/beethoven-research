@@ -23,7 +23,7 @@
   {
    "id": "cli",
    "kind": "cli",
-   "version": 1,
+   "version": 2,
    "summary": "The commands of python -m beethoven_qa a consumer runs from its pinned copy (cli.json): gate, standards, vendor, vendor-check and boundary, their options, their exit codes, and the [tool.beethoven-qa] table of pyproject.toml they read",
    "paths": [
     "interface/cli.json",

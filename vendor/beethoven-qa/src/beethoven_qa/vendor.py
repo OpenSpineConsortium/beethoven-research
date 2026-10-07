@@ -20,11 +20,14 @@ form, and a reviewer who sees ``src/beethoven_qa/`` in a consumer asks why.
 
 Two commands, both run through ``python -m beethoven_qa``:
 
-- ``vendor --into <consumer>`` runs from a clean beethoven-qa checkout and writes the copy (the
-  package, the plugin and its marketplace file, the manifest under interface/, and the repository
-  kit: the pre-push hook, the auto-merge, rulesets and standards workflows and the cloud-session
-  hook every repository carries alike),
-  read from the commit's own objects, never from the working tree. With ``--kit`` it also puts the
+- ``vendor --into <consumer> --ref <tag>`` writes the copy (the package, the plugin and its
+  marketplace file, the manifest under interface/, and the repository kit: the pre-push hook, the
+  auto-merge, rulesets and standards workflows and the cloud-session hook every repository carries
+  alike) of the release that tag names, read from GitHub through the person's own ``gh`` sign-in,
+  the way every other copy is pulled (the interface standard's rule 3): only a commit the default
+  branch contains, every file checked against the object id the commit's tree gives it, and no
+  checkout of beethoven-qa read. It runs from wherever the package is importable, which after the
+  first copy is the consumer's own. With ``--kit`` it also puts the
   kit files in place in the consumer. Before it writes anything it refuses a link anywhere on a
   path it would write, a file in the way of a directory, and any existing file it would replace
   whose bytes are not the ones HEAD holds for it (compared with the commit's blob, not with the
@@ -44,16 +47,28 @@ contracted function called would be run with symbolic arguments after all.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import functools
 import hashlib
 import os
 import re
 import shlex
 import subprocess
+import urllib.parse
 from pathlib import Path
+from typing import Literal, TypeVar
 
 from beartype import beartype
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeInt,
+    RootModel,
+    ValidationError,
+    field_validator,
+)
 
 from beethoven_qa.contracts import ensure, require
 
@@ -335,16 +350,174 @@ def _blobs(source: Path, commit: str) -> dict[str, tuple[int, bytes]]:
             path = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise _Refused(f"a file name at {commit[:12]} is not UTF-8: {raw!r}") from exc
-        if kind != "blob" or mode not in _MODES:
-            raise _Refused(f"{path} is a {mode} entry at {commit[:12]} (a link or a submodule)")
-        rel = f"kit/{path}" if path in KIT else path
-        if not is_safe_relpath(rel):
-            raise _Refused(f"refusing an unsafe path {rel!r}")
+        rel = _placed(path, mode, kind, commit)
         files[rel] = (_MODES[mode], _git_bytes(source, "cat-file", "blob", oid))
+    return _complete(files, commit)
+
+
+def _placed(path: str, mode: str, kind: str, commit: str) -> str:
+    # Where a file of the release lands in the copy (the kit under kit/), or the reason to take
+    # nothing: a copy holds plain files at safe paths, never a link or a submodule.
+    if kind != "blob" or mode not in _MODES:
+        raise _Refused(f"{path} is a {mode} entry at {commit[:12]} (a link or a submodule)")
+    rel = f"kit/{path}" if path in KIT else path
+    if not is_safe_relpath(rel):
+        raise _Refused(f"refusing an unsafe path {rel!r}")
+    return rel
+
+
+def _complete(files: dict[str, tuple[int, bytes]], commit: str) -> dict[str, tuple[int, bytes]]:
     missing = [rel for rel in KIT if f"kit/{rel}" not in files]
     if missing:
         raise _Refused(f"the kit is incomplete at {commit[:12]}: {', '.join(missing)}")
     return files
+
+
+# --- the release on GitHub, read through the person's own gh sign-in ------------------------------
+#
+# The same route as every other copy (the interface standard's rule 3, a consumer's pull.sh): `gh
+# api` with the sign-in of whoever runs it, so nothing here holds a token and none reaches an
+# argument; only a commit the default branch contains; and each file's bytes checked against the
+# object id the commit's own tree gives it, so they are the commit's whatever carried them. GitHub's
+# answers are the boundary, read through the models below, which keep only what the copy needs.
+
+_API = f"repos/{REPOSITORY}"
+_SHA = Field(pattern=r"^[0-9a-f]{40}$")
+
+
+class _Commit(BaseModel):
+    sha: str = _SHA
+
+
+class _Repository(BaseModel):
+    default_branch: str
+
+
+class _Comparison(BaseModel):
+    status: str
+
+
+class _Object(BaseModel):
+    kind: str = Field(alias="type")
+    sha: str = _SHA
+
+
+class _Ref(BaseModel):
+    ref: str
+    target: _Object = Field(alias="object")
+
+
+class _Refs(RootModel[list[_Ref]]):
+    pass
+
+
+class _Tag(BaseModel):
+    target: _Object = Field(alias="object")
+
+
+class _Entry(BaseModel):
+    path: str
+    mode: str
+    kind: str = Field(alias="type")
+    sha: str = _SHA
+
+
+class _Tree(BaseModel):
+    truncated: bool
+    tree: list[_Entry]
+
+
+class _Blob(BaseModel):
+    encoding: Literal["base64"]
+    content: str
+
+
+_Answer = TypeVar("_Answer", bound=BaseModel)
+# An annotated tag names a tag object, which names the commit; a tag of a tag is one step more.
+_TAG_STEPS = 4
+
+
+def _quoted(part: str) -> str:
+    # One segment of an API path: a slash or a dot-dot in a ref cannot reach another endpoint.
+    return urllib.parse.quote(part, safe="")
+
+
+def _gh(path: str, shape: type[_Answer]) -> _Answer:
+    try:
+        out = subprocess.run(
+            ["gh", "api", path], check=True, capture_output=True, text=True, env=_git_env()
+        )
+        return shape.model_validate_json(out.stdout)
+    except FileNotFoundError as exc:
+        raise _Refused("gh is not installed; the release is read with your own gh sign-in") from exc
+    except subprocess.CalledProcessError as exc:
+        said = exc.stderr.strip().splitlines() or [f"gh exited {exc.returncode}"]
+        raise _Refused(f"GitHub did not answer {path}: {said[-1]}") from exc
+    except ValidationError as exc:
+        raise _Refused(f"GitHub's answer to {path} is not in the shape it documents") from exc
+
+
+def _commit_of(ref: str) -> str:
+    # The commit ``ref`` names on GitHub, refused unless the default branch contains it: a copy is
+    # of a merged change, never of a pull request's branch.
+    commit = _gh(f"{_API}/commits/{_quoted(ref)}", _Commit).sha
+    default = _gh(_API, _Repository).default_branch
+    status = _gh(f"{_API}/compare/{_quoted(default)}...{commit}", _Comparison).status
+    if status not in ("identical", "behind"):
+        raise _Refused(f"{ref} ({commit[:12]}) is not on {default}; a release is made only there")
+    return commit
+
+
+def _tag_of(ref: str, commit: str) -> str:
+    # What ORIGIN records as the ref: ``ref`` itself when it is a tag of that commit, "untagged"
+    # otherwise (a commit or a branch, the way an untagged checkout was recorded).
+    refs = _gh(f"{_API}/git/matching-refs/tags/{_quoted(ref)}", _Refs).root
+    target = next((r.target for r in refs if r.ref == f"refs/tags/{ref}"), None)
+    for _ in range(_TAG_STEPS):
+        if target is None or target.kind != "tag":
+            break
+        target = _gh(f"{_API}/git/tags/{target.sha}", _Tag).target
+    tagged = target is not None and target.kind == "commit" and target.sha == commit
+    return ref if tagged else "untagged"
+
+
+def _in_copy(path: str) -> bool:
+    # A file the copy takes: a kit file, or one at or under an entry of COPY_ROOTS, as the
+    # pathspecs `_blobs` gives `git ls-tree` choose them.
+    return path in KIT or any(path == root or path.startswith(f"{root}/") for root in COPY_ROOTS)
+
+
+def _object_id(data: bytes) -> str:
+    # git's own name for a file's bytes, SHA-1 over "blob <size>", a NUL and the bytes: the name
+    # the commit's tree gives the file, so the same name means the commit's bytes, the check git
+    # itself makes on a fetch. ORIGIN's digest of the copy is sha256.
+    return hashlib.sha1(b"blob %d\x00%b" % (len(data), data), usedforsecurity=False).hexdigest()
+
+
+def _blob(oid: str) -> bytes:
+    blob = _gh(f"{_API}/git/blobs/{oid}", _Blob)
+    try:
+        data = base64.b64decode(blob.content)
+    except binascii.Error as exc:
+        raise _Refused(f"GitHub sent {oid[:12]} in a form that does not decode") from exc
+    if _object_id(data) != oid:
+        raise _Refused(f"the bytes GitHub sent for {oid[:12]} are not that file; none was written")
+    return data
+
+
+def _fetched(commit: str) -> dict[str, tuple[int, bytes]]:
+    # What a copy of ``commit`` holds, as `_blobs` reads it from a checkout's objects: COPY_ROOTS
+    # at their own paths and the kit under kit/, each with the mode the commit gives it.
+    tree = _gh(f"{_API}/git/trees/{commit}?recursive=1", _Tree)
+    if tree.truncated:
+        raise _Refused(f"GitHub's listing of {commit[:12]} is cut short; a copy is never partial")
+    files: dict[str, tuple[int, bytes]] = {}
+    for entry in tree.tree:
+        if entry.kind == "tree" or not _in_copy(entry.path):
+            continue
+        rel = _placed(entry.path, entry.mode, entry.kind, commit)
+        files[rel] = (_MODES[entry.mode], _blob(entry.sha))
+    return _complete(files, commit)
 
 
 def _blocked(base: Path, rel: str, directory: bool = False) -> str | None:
@@ -412,57 +585,61 @@ def _write(path: Path, data: bytes, mode: int) -> None:
         fh.write(data)
 
 
-def _sync(into: Path, install_kit: bool, source: Path | None = None) -> int:
-    # ``source`` is only ever given by the tests, which copy from a throwaway checkout.
-    source = (source or _source_root()).resolve()
-    if _toplevel(source) != source:
-        print(
-            f"vendor: {source} is not a beethoven-qa checkout (a vendored copy cannot copy itself)"
-        )
-        return 2
-    if _git(source, "status", "--porcelain", "--untracked-files=all"):
-        print("vendor: the beethoven-qa checkout has uncommitted changes; a copy is of a commit")
-        return 2
+def _sync(into: Path, install_kit: bool, ref: str) -> int:
     into = into.resolve()
-    if _toplevel(into) != into:
-        print(f"vendor: {into} is not the root of a git checkout")
+    unfit = _unfit(into)
+    if unfit is not None:
+        print(f"vendor: {unfit}")
         return 2
-    if into == source:
-        print("vendor: refusing to copy beethoven-qa into itself")
-        return 2
-
-    commit = _git(source, "rev-parse", "HEAD").strip()
     try:
-        ref = _git(source, "describe", "--tags", "--exact-match", "HEAD").strip()
-    except subprocess.CalledProcessError:
-        ref = "untagged"
-    dest = into / VENDOR_DIR
-    try:
-        files = _blobs(source, commit)
-        origin = Origin(
-            repository=REPOSITORY,
-            ref=ref,
-            commit=commit,
-            tree_sha256=tree_digest(
-                tuple((rel, _sha256(data)) for rel, (_, data) in files.items())
-            ),
-            files=len(files),
-        )
-        old = _existing(into, dest)
+        old = _existing(into, into / VENDOR_DIR)
+        commit = _commit_of(ref)
+        files = _fetched(commit)
         kit = {rel: files[f"kit/{rel}"] for rel in KIT} if install_kit else {}
-        _preflight(into, dest, files, kit, old)
+        _preflight(into, into / VENDOR_DIR, files, kit, old)
+        origin = _origin_of(_tag_of(ref, commit), commit, files)
     except _Refused as refusal:
         print(f"vendor: {refusal}")
         return 2
-    except ValueError as exc:  # an Origin the record format cannot hold, such as a 64-hex commit
-        print(f"vendor: this commit cannot be recorded in ORIGIN: {exc}")
-        return 2
+    stopped = _write_copy(into, origin, files, kit)
+    if stopped is not None:
+        return stopped
+    return _left_over(old, frozenset(files))
 
+
+def _unfit(into: Path) -> str | None:
+    # Why ``into`` cannot take a copy, or None. It must be the root of a checkout; and never the
+    # beethoven-qa checkout this command runs from, which would then carry a copy of itself.
+    if _toplevel(into) != into:
+        return f"{into} is not the root of a git checkout"
+    if into == _source_root():
+        return "refusing to copy beethoven-qa into itself"
+    return None
+
+
+def _origin_of(ref: str, commit: str, files: dict[str, tuple[int, bytes]]) -> Origin:
+    digest = tree_digest(tuple((rel, _sha256(data)) for rel, (_, data) in files.items()))
+    return Origin(
+        repository=REPOSITORY, ref=ref, commit=commit, tree_sha256=digest, files=len(files)
+    )
+
+
+def _write_copy(
+    into: Path,
+    origin: Origin,
+    files: dict[str, tuple[int, bytes]],
+    kit: dict[str, tuple[int, bytes]],
+) -> int | None:
+    # Every file, then ORIGIN, then the kit; 3 when the file system stopped it part way.
+    dest = into / VENDOR_DIR
     try:
         for rel, (mode, data) in sorted(files.items()):
             _write(dest / rel, data, mode)
         _write(dest / ORIGIN_NAME, origin.render().encode("utf-8"), 0o644)
-        print(f"vendor: {len(files)} files of {REPOSITORY} {ref} ({commit[:12]}) into {dest}")
+        print(
+            f"vendor: {len(files)} files of {REPOSITORY} {origin.ref} ({origin.commit[:12]}), "
+            f"read from GitHub, into {dest}"
+        )
         for rel, (mode, data) in kit.items():
             _write(into / rel, data, mode)
         if kit:
@@ -471,16 +648,21 @@ def _sync(into: Path, install_kit: bool, source: Path | None = None) -> int:
         # NotImplementedError is CPython's word for a file-system call the platform lacks.
         print(f"vendor: stopped part way ({exc}); `git status` shows what was written")
         return 3
+    return None
 
-    gone = stale_files(old, frozenset(files)) if old is not None else []
-    if gone:
-        paths = " ".join(shlex.quote(f"{VENDOR_DIR}/{rel}") for rel in gone)
-        print("vendor: the new release no longer has these files; nothing was deleted. Remove them")
-        print("        in a reviewed commit (this works whether or not they were committed), then")
-        print("        run vendor-check:")
-        print(f"        rm -- {paths} && git rm -q --cached --ignore-unmatch -- {paths}")
-        return 1
-    return 0
+
+def _left_over(old: frozenset[str] | None, new: frozenset[str]) -> int:
+    # Never deletes: the files of the old copy this release dropped are listed, with the line that
+    # removes them, for a reviewed commit.
+    gone = stale_files(old, new) if old is not None else []
+    if not gone:
+        return 0
+    paths = " ".join(shlex.quote(f"{VENDOR_DIR}/{rel}") for rel in gone)
+    print("vendor: the new release no longer has these files; nothing was deleted. Remove them")
+    print("        in a reviewed commit (this works whether or not they were committed), then")
+    print("        run vendor-check:")
+    print(f"        rm -- {paths} && git rm -q --cached --ignore-unmatch -- {paths}")
+    return 1
 
 
 def _existing(into: Path, dest: Path) -> frozenset[str] | None:

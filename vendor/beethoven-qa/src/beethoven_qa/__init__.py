@@ -12,4 +12,4 @@ to that bar and bring existing code up to it (``plugin/``).
 __all__ = ["__version__"]
 
 # Integer versions (1.0.0), never fractional; the release tag of the repository says the same.
-__version__ = "2.0.0"
+__version__ = "3.0.0"

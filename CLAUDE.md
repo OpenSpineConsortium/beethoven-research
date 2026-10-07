@@ -198,7 +198,9 @@ pixi run --locked vendor-check  # the pinned copy still matches its ORIGIN, the 
 The pinned copy and the five kit files (`.githooks/pre-push`, `.github/workflows/automerge.yml`,
 `.github/workflows/rulesets.yml`, `.claude/hooks/session-start.sh`,
 `.github/workflows/standards.yml`) are never edited here; a change
-is made in beethoven-qa, released, and taken with its `vendor` command (beethoven-qa
+is made in beethoven-qa, released, and taken with its `vendor` command, which from 3.0.0 reads
+the release from GitHub through your own `gh` sign-in and runs from the copy itself: `pixi run
+--locked python -m beethoven_qa vendor --into . --ref <tag> --kit` (beethoven-qa
 `docs/CONSUMING.md`, "Updating to a new release"). The lock changes only on purpose, by pixi, in a
 change that says so (the slimming of 2026-10-04 re-locked for `linux-64` alone, and the `linux-64`
 entries did not move).

@@ -47,17 +47,18 @@
    }
   },
   "vendor": {
-   "summary": "write the pinned copy of this clean beethoven-qa checkout's commit into a consuming repository",
+   "summary": "write the pinned copy of a release, read from GitHub through the person's own gh sign-in at a commit main contains, into a consuming repository",
    "arguments": {},
    "options": {
     "--into": "DIR: the root of the consuming repository (required)",
+    "--ref": "REF: the release tag to take (required); a commit main contains, given by its id or a branch, is recorded as untagged",
     "--kit": "also put the repository kit files in place there"
    },
    "environment": {},
    "exit": {
     "0": "the copy (and with --kit the kit) is written and nothing of an older copy is left over",
     "1": "the copy is written, and the copy already there held files this release dropped; nothing was deleted, the printed line removes them",
-    "2": "refused before anything was written, or git failed",
+    "2": "refused before anything was written (a ref main does not contain, bytes that are not the commit's, gh failing or missing among the reasons), or git failed",
     "3": "stopped part way by an error of the file system; git status shows what was written"
    }
   },

@@ -16,7 +16,7 @@
   {
    "repository": "OpenSpineConsortium/beethoven-qa",
    "export": "cli",
-   "version": 1,
+   "version": 2,
    "into": "vendor/beethoven-qa",
    "origin": "vendor/beethoven-qa/ORIGIN"
   },
