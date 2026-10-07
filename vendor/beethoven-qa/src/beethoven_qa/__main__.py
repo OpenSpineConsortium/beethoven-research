@@ -58,6 +58,11 @@ def _standards_parser(s: argparse.ArgumentParser) -> None:
 
 def _vendor_parser(v: argparse.ArgumentParser) -> None:
     v.add_argument("--into", type=Path, required=True, help="root of the consuming repository")
+    v.add_argument(
+        "--ref",
+        required=True,
+        help="the release tag to take from GitHub (a commit on main is recorded as untagged)",
+    )
     v.add_argument("--kit", action="store_true", help="also put the repository kit files in place")
 
 
@@ -89,7 +94,11 @@ _COMMANDS: tuple[tuple[str, str, Callable[[argparse.ArgumentParser], None]], ...
         "the code standards, each group on its own, on the code new since a base commit",
         _standards_parser,
     ),
-    ("vendor", "write the pinned copy of this checkout into a repository", _vendor_parser),
+    (
+        "vendor",
+        "write the pinned copy of a release, read from GitHub, into a repository",
+        _vendor_parser,
+    ),
     ("vendor-check", "the copy matches its ORIGIN and the kit is in place", _vendor_check_parser),
     (
         "boundary",
@@ -119,7 +128,7 @@ def _standards(args: argparse.Namespace) -> int:
 
 # The commands that ask git: a git that fails or is missing is exit 2, never a traceback.
 _GIT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
-    "vendor": lambda args: vendor._sync(args.into, args.kit),
+    "vendor": lambda args: vendor._sync(args.into, args.kit, args.ref),
     "vendor-check": lambda args: vendor._check(args.root, args.source),
     "boundary": lambda args: boundary._run(args.root),
 }

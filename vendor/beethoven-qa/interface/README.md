@@ -20,7 +20,8 @@ break without raising the export's version, and the consumers import the contrac
 nothing else. The gate, the standards and the copy are reached through `cli`, so their modules can change
 inside a release without breaking anyone.
 
-Every export is at version 1. A change a consumer must act on (a name, a command or an option
+Every export is at version 1 but `cli`, at version 2 since 3.0.0: `vendor` reads the release from
+GitHub and takes a required `--ref`. A change a consumer must act on (a name, a command or an option
 removed or renamed, an exit code whose meaning changes) raises that export's version in the same
 change as the code; an addition keeps it (the standard's "How a provider changes an export").
 `tests/test_interface.py` holds these files to the code: every listed module and name imports, the

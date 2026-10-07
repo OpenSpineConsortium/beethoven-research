@@ -28,8 +28,8 @@ repository's own `CLAUDE.md` binds you in full; what follows adds to it.
    package the gate checks carries its contracts (imported from `beethoven_qa.contracts`, `@beartype`
    outermost and the contracts beneath it), because the gate fails a public function without them.
    Never edit `vendor/beethoven-qa/` by hand: the copy is refreshed only by
-   `python -m beethoven_qa vendor` from a beethoven-qa checkout, and `vendor-check` fails a copy
-   edited any other way. Never run git against the main checkout; the isolation checks refuse it,
+   `python -m beethoven_qa vendor`, which reads a release from GitHub, and `vendor-check` fails a
+   copy edited any other way. Never run git against the main checkout; the isolation checks refuse it,
    and a refused command is rewritten as plain separate commands inside the worktree, never worked
    around.
 4. Run `time pixi run --locked gate` in the worktree before you report. A red gate is reported red,
