@@ -1,0 +1,38 @@
+{
+ "format": 1,
+ "name": "beethoven-research",
+ "repository": "OpenSpineConsortium/beethoven-research",
+ "summary": "The Beethoven engine's research pipeline: REFORMS, CLAIM and the studies, computed under beethoven-qa's gate.",
+ "standard": "https://github.com/OpenSpineConsortium/beethoven/blob/main/INTERFACES.md",
+ "exports": [],
+ "imports": [
+  {
+   "repository": "OpenSpineConsortium/beethoven-qa",
+   "export": "python",
+   "version": 1,
+   "into": "vendor/beethoven-qa",
+   "origin": "vendor/beethoven-qa/ORIGIN"
+  },
+  {
+   "repository": "OpenSpineConsortium/beethoven-qa",
+   "export": "cli",
+   "version": 1,
+   "into": "vendor/beethoven-qa",
+   "origin": "vendor/beethoven-qa/ORIGIN"
+  },
+  {
+   "repository": "OpenSpineConsortium/beethoven-qa",
+   "export": "kit",
+   "version": 1,
+   "into": "vendor/beethoven-qa",
+   "origin": "vendor/beethoven-qa/ORIGIN"
+  },
+  {
+   "repository": "OpenSpineConsortium/beethoven-qa",
+   "export": "plugin",
+   "version": 1,
+   "into": "vendor/beethoven-qa",
+   "origin": "vendor/beethoven-qa/ORIGIN"
+  }
+ ]
+}
