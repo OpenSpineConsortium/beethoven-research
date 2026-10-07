@@ -72,9 +72,11 @@ def test_the_manifest_offers_nothing() -> None:
 
 def test_the_imports_are_beethoven_qas_four_exports_into_one_copy() -> None:
     assert sorted(i["export"] for i in MANIFEST["imports"]) == ["cli", "kit", "plugin", "python"]
+    # cli is at version 2 from beethoven-qa 3.0.0, for vendor's required --ref
+    versions = {"cli": 2, "kit": 1, "plugin": 1, "python": 1}
     for entry in MANIFEST["imports"]:
         assert entry["repository"] == QA
-        assert entry["version"] == 1
+        assert entry["version"] == versions[entry["export"]]
         assert entry["into"] == COPY
         assert entry["origin"] == f"{COPY}/ORIGIN"
     assert (REPO / COPY / "ORIGIN").read_text(encoding="utf-8").startswith(f"repository: {QA}\n")
