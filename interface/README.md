@@ -19,10 +19,10 @@ The four imports share one copy and one record, `vendor/beethoven-qa/ORIGIN`, in
 own form (repository, ref, commit, tree digest, file count), written by beethoven-qa's `vendor`
 command from a checkout at a release tag and checked by `pixi run --locked vendor-check`; that is
 the one copy the standard lets be fetched another way (its rule 3). The copy pinned today is
-beethoven-qa 1.0.0, which publishes no manifest of its own. From the re-pin to 2.0.0 on,
-beethoven-qa's `boundary` command checks these four entries against the copy's
-`interface/INTERFACE.json` and every `beethoven_qa` import against its `python` export; until then
-`tests/test_interface.py` holds this repository to the same rules.
+beethoven-qa 2.0.0, which carries beethoven-qa's own `interface/INTERFACE.json`: its `boundary`
+command, the gate's `boundary` lane, checks these four entries against that manifest and every
+`beethoven_qa` import against its `python` export, and `tests/test_interface.py` holds this
+repository to the same rules from its own side.
 
 Nothing here takes anything from beethoven-agents yet: a study will run inside its image and its
 orchestration, and when it does, that is an import declared here first, against an export

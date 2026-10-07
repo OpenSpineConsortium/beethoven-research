@@ -3,7 +3,8 @@
 It offers nothing; it takes beethoven-qa's four exports into one pinned copy; its code imports only
 what beethoven-qa's `python` export lists and nothing of beethoven-agents until that is declared;
 and no tracked line reaches another repository's checkout. beethoven-qa's own `boundary` command
-checks the same once the pinned copy carries it (the re-pin to 2.0.0); until then this file does.
+checks the same since the re-pin to 2.0.0 (the gate's `boundary` lane); this file keeps its own
+check beside it.
 """
 
 from __future__ import annotations
@@ -20,8 +21,7 @@ QA = "OpenSpineConsortium/beethoven-qa"
 COPY = "vendor/beethoven-qa"
 
 # beethoven-qa's `python` export, version 1 (its interface/python.json): what may be imported.
-# Held here because the copy pinned today (1.0.0) predates the file; the last test compares the
-# two as soon as the copy carries it.
+# Held here as well as in the pinned copy; the last test fails when the two part.
 PYTHON_EXPORT = {
     "beethoven_qa": ["__version__"],
     "beethoven_qa.contracts": ["DBC", "ViolationError", "ensure", "invariant", "require"],
@@ -117,7 +117,7 @@ def test_no_tracked_line_reaches_another_checkout() -> None:
     assert [hit for rel in files for hit in reaches(rel)] == []
 
 
-def test_the_held_python_export_equals_the_copys_once_it_carries_one() -> None:
+def test_the_held_python_export_equals_the_copys() -> None:
     published = REPO / COPY / "interface" / "python.json"
-    if published.exists():
-        assert json.loads(published.read_text(encoding="utf-8")) == PYTHON_EXPORT
+    assert published.exists(), "the pinned copy is older than beethoven-qa 2.0.0; take 2.0.0"
+    assert json.loads(published.read_text(encoding="utf-8")) == PYTHON_EXPORT
