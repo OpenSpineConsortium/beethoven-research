@@ -1,0 +1,12 @@
+{
+ "beethoven_qa": [
+  "__version__"
+ ],
+ "beethoven_qa.contracts": [
+  "DBC",
+  "ViolationError",
+  "ensure",
+  "invariant",
+  "require"
+ ]
+}

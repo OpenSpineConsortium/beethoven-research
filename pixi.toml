@@ -79,6 +79,11 @@ vendor-check = "python -m beethoven_qa vendor-check"
 # since where this branch left the remote's default branch; CI runs each group as its own job
 # (the kit's standards.yml).
 standards = "python -m beethoven_qa standards all"
-gate = { depends-on = ["lint", "typecheck", "test", "symbolic", "standards", "vendor-check"] }
+# The interface standard's five rules on what git tracks (the hub's INTERFACES.md, beethoven-qa's
+# CONSUMING.md step 2): nothing reaches another checkout, interface/INTERFACE.json names every
+# export and pinned copy, each copy holds what its ORIGIN lists, imports take only the published
+# surface, and dependence runs one way.
+boundary = "python -m beethoven_qa boundary"
+gate = { depends-on = ["lint", "typecheck", "test", "boundary", "symbolic", "standards", "vendor-check"] }
 # The gate before every push, not only in CI: one command points git at the repository's hooks.
 hooks = "git config core.hooksPath .githooks"

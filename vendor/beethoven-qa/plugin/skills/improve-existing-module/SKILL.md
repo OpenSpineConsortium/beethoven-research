@@ -30,7 +30,7 @@ environment and its pinned copy of beethoven-qa. They do not apply to:
 - **the browser and desktop editions**: TypeScript.
 
 Those take the repository half (the pre-push gate, required checks, auto-merge, rulesets as code)
-and their own language's checks (hpcworker's `tests/run.sh` under Python 3.6; the editions' own
+and their own language's checks (hpcworker's `framework/tests/run.sh` under Python 3.6; the editions' own
 typecheck and test scripts). Improving code there means characterisation tests in their own suite
 and the same rule on findings; it never means adding icontract or a new dependency.
 

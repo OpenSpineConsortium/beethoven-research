@@ -10,14 +10,16 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review]
 
-permissions:
-  contents: write
-  pull-requests: write
+# Nothing at the top; the one job that writes says so (OpenSSF Scorecard's Token-Permissions).
+permissions: {}
 
 jobs:
   arm:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     timeout-minutes: 5
     steps:
       - name: arm auto-merge when main requires the checks

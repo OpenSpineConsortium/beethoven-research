@@ -21,8 +21,9 @@ form, and a reviewer who sees ``src/beethoven_qa/`` in a consumer asks why.
 Two commands, both run through ``python -m beethoven_qa``:
 
 - ``vendor --into <consumer>`` runs from a clean beethoven-qa checkout and writes the copy (the
-  package, the plugin and its marketplace file, and the repository kit: the pre-push hook, the
-  auto-merge and rulesets workflows and the cloud-session hook every repository carries alike),
+  package, the plugin and its marketplace file, the manifest under interface/, and the repository
+  kit: the pre-push hook, the auto-merge, rulesets and standards workflows and the cloud-session
+  hook every repository carries alike),
   read from the commit's own objects, never from the working tree. With ``--kit`` it also puts the
   kit files in place in the consumer. Before it writes anything it refuses a link anywhere on a
   path it would write, a file in the way of a directory, and any existing file it would replace
@@ -75,8 +76,16 @@ VENDOR_DIR = "vendor/beethoven-qa"
 ORIGIN_NAME = "ORIGIN"
 # What the copy holds: the package (imported through the consumer's PYTHONPATH), the plugin and the
 # marketplace file that lists it (so the copied directory is itself a plugin marketplace the image
-# can register), and pyproject.toml for the package's declared dependencies.
-COPY_ROOTS: tuple[str, ...] = ("pyproject.toml", "src/beethoven_qa", "plugin", ".claude-plugin")
+# can register), pyproject.toml for the package's declared dependencies, and interface/, this
+# repository's manifest of what it offers (the interface standard's rule 2), which the consumer's
+# `boundary` command reads from the copy to know what it may import.
+COPY_ROOTS: tuple[str, ...] = (
+    "pyproject.toml",
+    "src/beethoven_qa",
+    "plugin",
+    ".claude-plugin",
+    "interface",
+)
 # The repository kit: files every consuming repository carries byte for byte. They are copied under
 # kit/ in the copy, and vendor-check compares the live files against them.
 KIT: tuple[str, ...] = (
@@ -84,6 +93,7 @@ KIT: tuple[str, ...] = (
     ".github/workflows/automerge.yml",
     ".github/workflows/rulesets.yml",
     ".claude/hooks/session-start.sh",
+    ".github/workflows/standards.yml",
 )
 # The kit files git runs, so they must be executable: git skips a hook that is not, with only a
 # hint. ORIGIN records no modes, so this is what the plain vendor-check knows of the release's.

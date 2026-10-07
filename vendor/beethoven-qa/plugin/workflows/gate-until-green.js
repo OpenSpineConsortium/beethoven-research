@@ -8,8 +8,8 @@ export const meta = {
   ],
 }
 // The shape the workflows page calls "keep fixing until a check passes", for any repository that
-// defines a pixi `gate` task (beethoven-qa's own: lint, typecheck, test, symbolic; a consuming
-// repository adds vendor-check). Written in beethoven-research on 2026-10-04 and moved into the
+// defines a pixi `gate` task (beethoven-qa's own: lint, typecheck, test, boundary, symbolic,
+// standards; a consuming repository adds vendor-check). Written in beethoven-research on 2026-10-04 and moved into the
 // beethoven-qa plugin at the split. One fixer at a time, in this checkout: parallel fixers would edit
 // the same files. Never skips, disables or weakens a test, a contract or a symbolic bound, and never
 // re-solves the lock: every gate runs `pixi run --locked`, which refuses a drifted manifest instead
@@ -36,11 +36,11 @@ const GATE = {
         type: 'object',
         required: ['lane', 'ids', 'summary'],
         properties: {
-          lane: { type: 'string', description: 'the failing pixi task, such as lock, lint, typecheck, test, symbolic or vendor-check' },
+          lane: { type: 'string', description: 'the failing pixi task, such as lock, lint, typecheck, test, boundary, symbolic, standards or vendor-check' },
           ids: {
             type: 'array',
             items: { type: 'string' },
-            description: 'what failed, copied verbatim from the tool, one per entry: a pytest node id (tests/test_x.py::test_y), the file:line and code of a ruff or mypy finding, the CrossHair target and file:line of a counterexample, the path vendor-check names; never prose, never a duration or a count',
+            description: 'what failed, copied verbatim from the tool, one per entry: a pytest node id (tests/test_x.py::test_y), the file:line and code of a ruff or mypy finding, the CrossHair target and file:line of a counterexample, the path vendor-check names, the file:line and rule of a boundary finding; never prose, never a duration or a count',
           },
           summary: { type: 'string', description: 'one paragraph: what failed and where' },
           excerpt: { type: 'string', description: 'the decisive lines of output, verbatim' },
@@ -126,12 +126,14 @@ for (let round = 1; round <= maxRounds; round++) {
   phase('Gate')
   const gate = await agent(
     'Run `pixi run --locked gate` in this checkout: every task the repository chains into its gate, usually ' +
-      'lint (ruff), typecheck (mypy), test (pytest under typeguard), symbolic (CrossHair/Z3) and, in a ' +
-      'repository that carries a copy of beethoven-qa, vendor-check. Report passed=true only if the command ' +
+      'lint (ruff), typecheck (mypy), test (pytest under typeguard), symbolic (CrossHair/Z3), standards (the ' +
+      'code standards, each group on its own) and, in a repository that carries a copy of beethoven-qa, ' +
+      'vendor-check. Report passed=true only if the command ' +
       'exited 0. If pixi stops before any task because the lock file is not up to date with the workspace, ' +
       'that is the failure to report (lane "lock"); never re-solve it. For each failing task give its name, ' +
       'the identifiers of what failed copied from its output (pytest node ids, file:line and code of each ' +
-      'lint or type finding, the target and file:line of each CrossHair counterexample), a one-paragraph ' +
+      'lint or type finding, the target and file:line of each CrossHair counterexample, the group and ' +
+      'file:line of each standards finding that blocks), a one-paragraph ' +
       'summary, and the decisive lines of its output verbatim. Change no file, and never run `pixi lock`, ' +
       '`pixi update`, `pixi add` or a plain `pixi install`.',
     { label: `gate round ${round}`, phase: 'Gate', schema: GATE },
@@ -171,7 +173,10 @@ for (let round = 1; round <= maxRounds; round++) {
       gate.failures.map((f) => `- ${f.lane}: ${f.summary}\n${(f.ids || []).join('\n')}\n${f.excerpt || ''}`).join('\n') +
       `\n\n${NEVER}\n\n` +
       'Fix the code, the test or the contract that is wrong. If vendor-check fails, the copy is refreshed only ' +
-      'by `python -m beethoven_qa vendor` from a beethoven-qa checkout: leave it and say so. Do not commit. ' +
+      'by `python -m beethoven_qa vendor` from a beethoven-qa checkout: leave it and say so. If standards fails, ' +
+      'change the code its blocking lines name (split the function or class, extract the copied block, test the ' +
+      'new lines, remove the weakness), as the code-standards skill says, never a limit, a configuration file ' +
+      'or an ignore comment; a supply-chain finding is in a workflow, which is a person\'s to change. Do not commit. ' +
       'Report which files you changed, as paths relative to the root of this checkout, and why.',
     { label: `fix round ${round}`, phase: 'Fix', schema: FIX },
   )

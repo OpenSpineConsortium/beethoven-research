@@ -42,6 +42,8 @@ jobs:
         run: pixi install --locked
       - name: the pinned copy of beethoven-qa matches its ORIGIN, and the kit is in place
         run: pixi run --locked vendor-check
+      - name: the interface standard's rules (boundary)
+        run: pixi run --locked boundary
       - name: lint
         run: pixi run --locked lint
       - name: typecheck

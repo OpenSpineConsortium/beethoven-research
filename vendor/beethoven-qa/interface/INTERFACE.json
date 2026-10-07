@@ -1,0 +1,87 @@
+{
+ "format": 1,
+ "name": "beethoven-qa",
+ "repository": "OpenSpineConsortium/beethoven-qa",
+ "summary": "How code for the Beethoven engine is written and proven before it may run: the contract decorators, the CrossHair/Z3 gate, the code standards, the boundary check of the interface standard, the pinned copy and the repository kit, and the Claude Code plugin.",
+ "standard": "https://github.com/OpenSpineConsortium/beethoven/blob/main/INTERFACES.md",
+ "exports": [
+  {
+   "id": "python",
+   "kind": "python",
+   "version": 1,
+   "summary": "The modules a consumer may import and the names each exports (python.json): the contract decorators through their one import point, and the release's version. Everything else of the package is private; a consumer runs it through the cli export",
+   "paths": [
+    "interface/python.json",
+    "src/beethoven_qa/__init__.py",
+    "src/beethoven_qa/contracts.py"
+   ],
+   "consumers": [
+    "OpenSpineConsortium/beethoven-agents",
+    "OpenSpineConsortium/beethoven-research"
+   ]
+  },
+  {
+   "id": "cli",
+   "kind": "cli",
+   "version": 1,
+   "summary": "The commands of python -m beethoven_qa a consumer runs from its pinned copy (cli.json): gate, standards, vendor, vendor-check and boundary, their options, their exit codes, and the [tool.beethoven-qa] table of pyproject.toml they read",
+   "paths": [
+    "interface/cli.json",
+    "src/beethoven_qa/__main__.py"
+   ],
+   "consumers": [
+    "OpenSpineConsortium/beethoven-agents",
+    "OpenSpineConsortium/beethoven-research"
+   ]
+  },
+  {
+   "id": "kit",
+   "kind": "files",
+   "version": 1,
+   "summary": "The repository kit every consumer carries byte for byte at the same paths: the pre-push gate, the auto-merge, rulesets and standards workflows, and the cloud session's start hook. A consumer of the pinned copy takes it with vendor --kit and vendor-check compares it; the others copied it by hand and carry no record yet",
+   "paths": [
+    ".githooks/pre-push",
+    ".github/workflows/automerge.yml",
+    ".github/workflows/rulesets.yml",
+    ".claude/hooks/session-start.sh",
+    ".github/workflows/standards.yml"
+   ],
+   "consumers": [
+    "OpenSpineConsortium/beethoven-agents",
+    "OpenSpineConsortium/beethoven-research",
+    "OpenSpineConsortium/beethoven-sites",
+    "OpenSpineConsortium/beethoven-desktop",
+    "OpenSpineConsortium/beethoven-base"
+   ]
+  },
+  {
+   "id": "plugin",
+   "kind": "files",
+   "version": 1,
+   "summary": "The Claude Code plugin beethoven-qa (skills, the stream agent, the workflows) and the marketplace file that lists it, carried unchanged in the pinned copy so the copy is itself a directory marketplace; Claude Code reads it, no consumer imports or runs it in its own tests",
+   "paths": [
+    "plugin/",
+    ".claude-plugin/marketplace.json"
+   ],
+   "consumers": [
+    "OpenSpineConsortium/beethoven-agents",
+    "OpenSpineConsortium/beethoven-research"
+   ]
+  },
+  {
+   "id": "docs",
+   "kind": "text",
+   "version": 1,
+   "summary": "How a repository takes beethoven-qa (the copy, its record, the gate's table, the lanes, the boundary check) and the code standards' groups, limits and sources",
+   "paths": [
+    "docs/CONSUMING.md",
+    "docs/STANDARDS.md"
+   ],
+   "consumers": [
+    "OpenSpineConsortium/beethoven-agents",
+    "OpenSpineConsortium/beethoven-research"
+   ]
+  }
+ ],
+ "imports": []
+}
