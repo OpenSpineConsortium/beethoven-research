@@ -4,7 +4,7 @@
 
 [project]
 name = "beethoven-qa"
-version = "1.0.0"
+version = "2.0.0"
 description = "Beethoven code-writing and verification framework: contracts, layered types, the CrossHair/Z3 gate"
 requires-python = ">=3.11"
 # Runtime dependencies are pinned by pixi.lock (here, and in every repository that carries a copy of
@@ -13,6 +13,7 @@ dependencies = [
   "icontract>=2.6",
   "pydantic>=2",
   "beartype>=0.18",
+  "pyyaml>=6",  # the supply-chain group and the boundary check read workflow files
 ]
 
 [tool.pytest.ini_options]

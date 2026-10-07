@@ -62,9 +62,10 @@ from types import ModuleType
 from typing import NamedTuple
 
 from beartype import beartype
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator, model_validator
 
 from beethoven_qa.contracts import ensure, require
+from beethoven_qa.vendor import is_safe_relpath
 
 __all__ = [
     "FunctionEntry",
@@ -250,6 +251,9 @@ class GateConfig(BaseModel):
     # checks it as a target.
     unproven: dict[str, str] = Field(default_factory=dict)
     per_condition_timeout: PositiveInt = Field(default=20, le=600)
+    # File (relative to the root) to what matched there to the reason the boundary check lets that
+    # finding of rule 1 or 4 stand (boundary.py): a person's decision in a reviewed change.
+    boundary: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> GateConfig:
@@ -266,6 +270,16 @@ class GateConfig(BaseModel):
             if not why.strip():
                 raise ValueError(f"unproven entry {name!r} needs its reason")
         return self
+
+    @field_validator("boundary")
+    @classmethod
+    def _known(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        for path, entries in value.items():
+            if not is_safe_relpath(path) or not entries:
+                raise ValueError(f"boundary entry {path!r} is not a file with what matched there")
+            if not all(what and why.strip() for what, why in entries.items()):
+                raise ValueError(f"boundary entry {path!r} needs what matched and the reason")
+        return value
 
     @classmethod
     def from_pyproject(cls, root: Path) -> GateConfig:

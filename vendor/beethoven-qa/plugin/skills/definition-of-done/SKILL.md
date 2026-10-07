@@ -105,8 +105,13 @@ per_condition_timeout = 20          # seconds per condition, 1 to 600: the decla
 ## Running the gate and reading it
 
 - `pixi run --locked gate`: lint (ruff), typecheck (mypy strict), test (pytest under typeguard),
-  symbolic, and in a consuming repository vendor-check. `/beethoven-qa:gate-until-green` fixes it
-  round by round.
+  symbolic, the code standards, and in a consuming repository vendor-check.
+  `/beethoven-qa:gate-until-green` fixes it round by round.
+- `pixi run --locked standards` is `python -m beethoven_qa standards all`: readability, design,
+  duplication, coverage, security and supply chain, each on its own, blocking only what the change
+  made since where the branch left the default branch. One group:
+  `python -m beethoven_qa standards <group> --base <ref>`. How to write to them and read a failure
+  is the `code-standards` skill.
 - `pixi run --locked symbolic` is `python -m beethoven_qa gate`: both checks over the whole package,
   the contract rule and CrossHair at the declared bound. Both always run, and it fails on either.
 - One module, every condition's verdict: `pixi run --locked python -m beethoven_qa gate --module

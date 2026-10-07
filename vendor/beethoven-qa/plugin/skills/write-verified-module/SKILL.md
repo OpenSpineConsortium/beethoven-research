@@ -67,11 +67,13 @@ contracted function, nor through anything it calls: CrossHair runs it with symbo
 runs the body of every function it calls, a function listed under `[tool.beethoven-qa.unproven]`
 included (listing only keeps a function from being a target of its own; its contracts are then
 assumed by every proven caller and checked by the tests alone). Prefer a loop over the items of an
-argument or to a constant; a loop to a symbolic count rarely comes back confirmed.
+argument or to a constant; a loop to a symbolic count rarely comes back confirmed. Write to the
+code standards' limits from the start (the `code-standards` skill): short functions of at most four
+parameters and little nesting, no copied block, a test for every new branch.
 
 ## 4. The gate
 
-`pixi run --locked gate`. A red lane is fixed at its cause: the code, or a contract that was wrong
+`pixi run --locked gate`, the code standards among its lanes. A red lane is fixed at its cause: the code, or a contract that was wrong
 in the specification, and a changed contract goes back to the person in step 6.
 `/beethoven-qa:gate-until-green` runs the gate and one fixer per round, gating every fix again,
 until green or stuck.

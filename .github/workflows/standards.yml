@@ -1,0 +1,94 @@
+name: standards
+# The code standards (python -m beethoven_qa standards; docs/STANDARDS.md of beethoven-qa): one job
+# per group, so each passes or fails on its own and says which, and one job that is green only when
+# every group is. That last job is the check .github/rulesets/main.json requires, so a group a later
+# release of beethoven-qa adds needs no change to the rule. Every repository that carries
+# beethoven-qa's kit has this same file.
+#
+# A group blocks only what the change made: the findings of the commit the change starts from are
+# read too, and an old finding that is no worse is recorded, never blocking. The base is the pull
+# request's base (the first parent of the merge commit GitHub checks out), or on a push the commit
+# the push replaced. Each group's SARIF 2.1.0 log is kept as an artifact of the run. No job holds a
+# secret, and nothing is uploaded anywhere else.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The pixi that produced the committed lock, fetched from its release asset by name.
+  PIXI_VERSION: 0.81.0
+
+jobs:
+  group:
+    name: standards / ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [readability, design, duplication, coverage, security, supply-chain]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The base commit's objects are read to tell an old finding from a new one.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: install pixi
+        run: |
+          curl -fsSL -o /usr/local/bin/pixi \
+            "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl"
+          chmod 0755 /usr/local/bin/pixi
+          pixi --version
+      - name: reconstruct the environment from the lock
+        run: pixi install --locked
+      - name: the commit the new code starts from
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base=auto
+          if [ "$EVENT" = pull_request ]; then
+            base=HEAD^1
+          elif [ "$EVENT" = push ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          elif [ "$EVENT" = push ]; then
+            base=none  # a new branch or a rewritten one: no commit to compare with
+          fi
+          echo "BASE=$base" >> "$GITHUB_ENV"
+          echo "the new code starts from: $base"
+      - name: ${{ matrix.group }}
+        env:
+          GROUP: ${{ matrix.group }}
+        run: pixi run --locked python -m beethoven_qa standards "$GROUP" --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: keep the SARIF log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sarif-${{ matrix.group }}
+          path: ${{ runner.temp }}/sarif/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  all:
+    # The required check: green only when every group's job is.
+    name: standards (every group green)
+    if: ${{ always() }}
+    needs: group
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: every group passed
+        env:
+          RESULT: ${{ needs.group.result }}
+        run: |
+          if [ "$RESULT" != success ]; then
+            echo "::error::a standards group did not pass ($RESULT); its own job says which and why"
+            exit 1
+          fi
+          echo "every standards group passed"
