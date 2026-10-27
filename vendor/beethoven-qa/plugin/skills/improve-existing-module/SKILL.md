@@ -25,14 +25,16 @@ icontract, the layering rule and the CrossHair gate apply to Python that may tak
 engine's repositories (beethoven-qa, beethoven-agents, the research pipeline), each with its pixi
 environment and its pinned copy of beethoven-qa. They do not apply to:
 
-- **hpcworker's framework**: Python 3.6 standard library only (the login node is CentOS 7), so
-  icontract cannot be imported there and no pixi environment is added to it;
+- **hpcworker's framework**: it runs on the login node of every site it supports, so it keeps to
+  the standard library of the oldest Python among them (3.6 today, because Wayne State's login node
+  is CentOS 7, as that site's module in beethoven-sites records). icontract cannot be imported
+  there and no pixi environment is added to it;
 - **the browser and desktop editions**: TypeScript.
 
 Those take the repository half (the pre-push gate, required checks, auto-merge, rulesets as code)
-and their own language's checks (hpcworker's `framework/tests/run.sh` under Python 3.6; the editions' own
-typecheck and test scripts). Improving code there means characterisation tests in their own suite
-and the same rule on findings; it never means adding icontract or a new dependency.
+and their own language's checks (hpcworker's `framework/tests/run.sh` under that oldest Python; the
+editions' own typecheck and test scripts). Improving code there means characterisation tests in
+their own suite and the same rule on findings; it never means adding icontract or a new dependency.
 
 ## 1. Read the module and every caller
 
@@ -112,8 +114,10 @@ fail.
   plausible wrong change there (drop a clamp, shift a bound by one, flip a comparison) and run
   CrossHair on the copy at the declared bound (the command for a copy is in the definition-of-done
   skill). No counterexample means a postcondition is missing for that failure.
-- **Preconditions that admit nothing**: an `Unable to meet precondition` line under the gate's
-  `--report-all`, which fails it; without that option the gate passes such a function in silence.
+- **Preconditions that admit nothing**: an `Unable to meet precondition` line, which fails the
+  gate on every run (`--report-all` is accepted and changes nothing); either the contract is
+  vacuous or it is stated over values CrossHair cannot build, such as a string held to a few
+  values, which an enum states instead.
 - **Preconditions narrower than what callers pass**, compared against step 1's list.
 
 ## 8. Report

@@ -1,105 +1,135 @@
 {
- "program": "python -m beethoven_qa",
- "options": {
-  "--version": "print beethoven-qa and the release's version, and exit 0"
- },
- "commands": {
-  "gate": {
-   "summary": "every public function of the package carries contracts, and CrossHair + Z3 find no counterexample within the declared bound",
-   "arguments": {},
-   "options": {
-    "--root": "DIR: the repository root (default: .)",
-    "--module": "DOTTED: only this module of the package",
-    "--report-all": "print every condition's verdict; a precondition no input can meet fails the gate"
-   },
-   "environment": {
-    "BEETHOVEN_QA_JOBS": "lowers the number of CrossHair processes at a time (the allocation's cores); never raises it"
-   },
-   "exit": {
-    "0": "both checks passed",
-    "1": "a finding: a public function without contracts, a counterexample, a directive, an unproven entry that names no contracted function, or anything else the gate refuses (CrossHair's own exit code when CrossHair itself failed)",
-    "2": "the [tool.beethoven-qa] table cannot be used, or --module names no checked module of the package"
-   }
+  "program": "python -m beethoven_qa",
+  "options": {
+    "--version": "print beethoven-qa and the release's version, and exit 0"
   },
-  "standards": {
-   "summary": "the code standards, each group on its own, on the code new since a base commit",
-   "arguments": {
-    "group": [
-     "readability",
-     "design",
-     "duplication",
-     "coverage",
-     "security",
-     "supply-chain",
-     "all"
-    ]
-   },
-   "options": {
-    "--root": "DIR: the repository root (default: .)",
-    "--base": "REF: the commit the new code starts from, auto (where HEAD left the remote's default branch; the default) or none (the whole tree)",
-    "--sarif": "DIR: write each group's SARIF 2.1.0 log there"
-   },
-   "environment": {},
-   "exit": {
-    "0": "every group asked for passed",
-    "1": "a group failed: the change made a finding that blocks",
-    "2": "a group could not run: a tool failed, git could not tell the base, or the [tool.beethoven-qa] table cannot be used"
-   }
+  "commands": {
+    "gate": {
+      "summary": "every public function of the package carries contracts, nothing in the package or its tests sets a finding or a test aside, and CrossHair + Z3 find no counterexample within the declared bound; every condition's verdict is printed and counted",
+      "arguments": {},
+      "options": {
+        "--root": "DIR: the repository root (default: .)",
+        "--module": "DOTTED: only this module of the package",
+        "--report-all": "accepted and without effect: every run prints every condition's verdict, counts them under each target (gate: <target>: <c> confirmed over all paths, <n> not confirmed within <T> s, <u> unable to meet a precondition) and over the run (gate: conditions: <c> of <m> confirmed over all paths, <n> not confirmed within <T> s per condition, <u> unable to meet a precondition, the last line before the verdict), and fails on a precondition no input can meet",
+        "--base": "REF: the proof (check 2) covers only the modules the change since this commit reaches, and says which (gate: proof: ...); pyproject.toml is read by its keys (a comment, an unproven entry added or reworded, a boundary entry and a quiet tool's table reach none; an unproven entry removed reaches the function it named; any other key every module); a link or submodule git tracks, or a link on the disk among the root files or in the package's directory, proves every module; auto is where HEAD left the remote's default branch, none (the default) every module; a base that cannot be told proves every module, and --module ignores it; check 1 always covers the whole package"
+      },
+      "environment": {
+        "BEETHOVEN_QA_JOBS": "lowers the number of CrossHair processes at a time (the allocation's cores); never raises it",
+        "BEETHOVEN_QA_BASE": "the default of --base (the kit's pre-push hook sets auto unless it is set already)"
+      },
+      "exit": {
+        "0": "both checks passed",
+        "1": "a finding: a public function without contracts, a counterexample, a precondition no input can meet, a directive, a suppression comment, a skipped test or a .pyi stub in the package or where pytest collects, an unproven entry that names no contracted function, or anything else the gate refuses (CrossHair's own exit code when CrossHair itself failed)",
+        "2": "the [tool.beethoven-qa] table cannot be used, or --module names no checked module of the package"
+      }
+    },
+    "standards": {
+      "summary": "the code standards, each group on its own, on the code new since a base commit",
+      "arguments": {
+        "group": [
+          "readability",
+          "design",
+          "duplication",
+          "coverage",
+          "security",
+          "supply-chain",
+          "all"
+        ]
+      },
+      "options": {
+        "--root": "DIR: the repository root (default: .)",
+        "--base": "REF: the commit the new code starts from, auto (where HEAD left the remote's default branch; the default) or none (the whole tree)",
+        "--sarif": "DIR: write each group's SARIF 2.1.0 log there"
+      },
+      "environment": {},
+      "exit": {
+        "0": "every group asked for passed",
+        "1": "a group failed: the change made a finding that blocks",
+        "2": "a group could not run: a tool failed, git could not tell the base, or the [tool.beethoven-qa] table cannot be used"
+      }
+    },
+    "coach": {
+      "summary": "for Claude Code's PostToolUse hook (plugin/hooks/): reads the hook's call as JSON on stdin and prints, as the hook's JSON, what the cheap groups (all but coverage) would block in CI in the file the call edited, against the auto base; prints nothing when nothing would block or anything stands in the way",
+      "arguments": {},
+      "options": {
+        "--root": "DIR: the repository root (default: .)"
+      },
+      "environment": {},
+      "exit": {
+        "0": "always, answer or not: the answer is advice beside an edit that has already happened",
+        "2": "the command line itself was not understood (argparse); never for anything the hook hands it"
+      }
+    },
+    "vendor": {
+      "summary": "write the pinned copy of a release, read from GitHub through the person's own gh sign-in at a commit main contains, into a consuming repository",
+      "arguments": {},
+      "options": {
+        "--into": "DIR: the root of the consuming repository (required)",
+        "--ref": "REF: the release tag to take (required); a commit main contains, given by its id or a branch, is recorded as untagged",
+        "--kit": "also put the repository kit files in place there"
+      },
+      "environment": {},
+      "exit": {
+        "0": "the copy (and with --kit the kit) is written and nothing of an older copy is left over",
+        "1": "the copy is written, and the copy already there held files this release dropped; nothing was deleted, the printed line removes them",
+        "2": "refused before anything was written (a ref main does not contain, bytes that are not the commit's, gh failing or missing among the reasons), or git failed",
+        "3": "stopped part way by an error of the file system; git status shows what was written"
+      }
+    },
+    "vendor-check": {
+      "summary": "the pinned copy matches its ORIGIN and the kit is in place",
+      "arguments": {},
+      "options": {
+        "--root": "DIR: the consuming repository's root (default: .)",
+        "--source": "DIR: the beethoven-qa checkout this command runs from, to rebuild the copy from the commit ORIGIN names; refused from anywhere else"
+      },
+      "environment": {},
+      "exit": {
+        "0": "the copy matches its ORIGIN (and with --source the commit it names), and the kit is in place",
+        "1": "the copy or the kit differs, or the check was refused",
+        "2": "git failed"
+      }
+    },
+    "boundary": {
+      "summary": "the interface standard's rules 1 to 5 on the repository: a sealed tree, the manifest, the pinned imports, the published surface, the direction",
+      "arguments": {},
+      "options": {
+        "--root": "DIR: the repository root (default: .)"
+      },
+      "environment": {},
+      "exit": {
+        "0": "every rule holds (known exceptions printed, each with its reason)",
+        "1": "a finding, each printed as file:line, the rule and what to do; or a known exception that matches nothing any more",
+        "2": "could not run: not the root of a git checkout, a pyproject.toml or [tool.beethoven-qa] table that cannot be read, or git failed"
+      }
+    },
+    "report": {
+      "summary": "the evidence report (docs/REPORT.md): every lane the gate runs (the tasks lint, typecheck, test, boundary, symbolic and standards of pixi.toml, and vendor-check when the pinned copy is there), each command as its own process in the environment the command was started in, the standards lane given --sarif and the --base the command was given; writes report.md and report.json with the repository, the lock's versions and each tool's own, every lane's argv, exit code, wall time and output file, the gate's counts, each standards group's SARIF counts, the enforcement facts, who decides each verdict, where a language model is involved, and what the report does not show",
+      "arguments": {},
+      "options": {
+        "--root": "DIR: the repository root (default: .)",
+        "--out": "DIR: where report.md, report.json, lanes/<task>-<n>.txt and sarif/<group>.sarif are written (default: ./report); refused unless it is empty or not there yet, since an earlier report's files would be read as this run's and nothing of ours deletes",
+        "--base": "REF: the commit the new code starts from, handed to the standards lane as its --base (default: the lane's own, auto, the merge base with origin/main; CI passes the event's base commit, as standards.yml does)",
+        "--timeout": "SECONDS: how long one lane may run before it is stopped and recorded as exit 124 (default: 3600)"
+      },
+      "environment": {},
+      "exit": {
+        "0": "every lane passed",
+        "1": "a lane failed, or was stopped at the timeout (its exit recorded as 124); the report is written and says which",
+        "2": "cannot run: no pyproject.toml, no git, pixi.toml lacks one of the lane tasks or a lane task sets env or cwd, or --out is not empty"
+      }
+    }
   },
-  "vendor": {
-   "summary": "write the pinned copy of a release, read from GitHub through the person's own gh sign-in at a commit main contains, into a consuming repository",
-   "arguments": {},
-   "options": {
-    "--into": "DIR: the root of the consuming repository (required)",
-    "--ref": "REF: the release tag to take (required); a commit main contains, given by its id or a branch, is recorded as untagged",
-    "--kit": "also put the repository kit files in place there"
-   },
-   "environment": {},
-   "exit": {
-    "0": "the copy (and with --kit the kit) is written and nothing of an older copy is left over",
-    "1": "the copy is written, and the copy already there held files this release dropped; nothing was deleted, the printed line removes them",
-    "2": "refused before anything was written (a ref main does not contain, bytes that are not the commit's, gh failing or missing among the reasons), or git failed",
-    "3": "stopped part way by an error of the file system; git status shows what was written"
-   }
-  },
-  "vendor-check": {
-   "summary": "the pinned copy matches its ORIGIN and the kit is in place",
-   "arguments": {},
-   "options": {
-    "--root": "DIR: the consuming repository's root (default: .)",
-    "--source": "DIR: the beethoven-qa checkout this command runs from, to rebuild the copy from the commit ORIGIN names; refused from anywhere else"
-   },
-   "environment": {},
-   "exit": {
-    "0": "the copy matches its ORIGIN (and with --source the commit it names), and the kit is in place",
-    "1": "the copy or the kit differs, or the check was refused",
-    "2": "git failed"
-   }
-  },
-  "boundary": {
-   "summary": "the interface standard's rules 1 to 5 on the repository: a sealed tree, the manifest, the pinned imports, the published surface, the direction",
-   "arguments": {},
-   "options": {
-    "--root": "DIR: the repository root (default: .)"
-   },
-   "environment": {},
-   "exit": {
-    "0": "every rule holds (known exceptions printed, each with its reason)",
-    "1": "a finding, each printed as file:line, the rule and what to do; or a known exception that matches nothing any more",
-    "2": "could not run: not the root of a git checkout, a pyproject.toml or [tool.beethoven-qa] table that cannot be read, or git failed"
-   }
+  "configuration": {
+    "file": "pyproject.toml",
+    "table": "tool.beethoven-qa",
+    "keys": {
+      "package": "the top-level package the gate and the standards check",
+      "src": "its directory inside the repository (default: src)",
+      "exempt": "modules allowed to carry no contracts: wiring and the command line only",
+      "unproven": "function -> the reason the gate never checks it as a target",
+      "per_condition_timeout": "seconds per condition, 1 to 600 (default: 20)",
+      "boundary": "file -> what matched there -> the reason the boundary check lets a finding of rule 1 or 4 stand"
+    }
   }
- },
- "configuration": {
-  "file": "pyproject.toml",
-  "table": "tool.beethoven-qa",
-  "keys": {
-   "package": "the top-level package the gate and the standards check",
-   "src": "its directory inside the repository (default: src)",
-   "exempt": "modules allowed to carry no contracts: wiring and the command line only",
-   "unproven": "function -> the reason the gate never checks it as a target",
-   "per_condition_timeout": "seconds per condition, 1 to 600 (default: 20)",
-   "boundary": "file -> what matched there -> the reason the boundary check lets a finding of rule 1 or 4 stand"
-  }
- }
 }

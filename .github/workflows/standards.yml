@@ -1,15 +1,26 @@
 name: standards
 # The code standards (python -m beethoven_qa standards; docs/STANDARDS.md of beethoven-qa): one job
-# per group, so each passes or fails on its own and says which, and one job that is green only when
-# every group is. That last job is the check .github/rulesets/main.json requires, so a group a later
-# release of beethoven-qa adds needs no change to the rule. Every repository that carries
-# beethoven-qa's kit has this same file.
+# that runs every group as a step of its own, so each passes or fails on its own and says which, and
+# is green only when every group is. That job is the check .github/rulesets/main.json requires, so a
+# group a later release of beethoven-qa adds needs no change to the rule. Every repository that
+# carries beethoven-qa's kit has this same file.
+#
+# Until 8.0.0 each group was a job of its own, beside a seventh that waited for them. A group takes
+# about 15 seconds, and GitHub bills every job by the whole minute, so a run cost eight billed
+# minutes for under three of work; in SchwingNet on 2026-10-25 that was 834 billed minutes for 288
+# of work, the day the organization's included minutes ran out. The groups now share one checkout
+# and one environment, and a group's step runs whether or not the one before it passed.
 #
 # A group blocks only what the change made: the findings of the commit the change starts from are
 # read too, and an old finding that is no worse is recorded, never blocking. The base is the pull
 # request's base (the first parent of the merge commit GitHub checks out), or on a push the commit
 # the push replaced. Each group's SARIF 2.1.0 log is kept as an artifact of the run. No job holds a
 # secret, and nothing is uploaded anywhere else.
+#
+# One more job, scorecard (report), runs OpenSSF Scorecard over the tree and only reports: it is
+# not among the jobs the required check waits for, and nothing in the ruleset names it
+# (docs/STANDARDS.md says why it does not block). Since it blocks nothing, it runs on main and by
+# hand, not on every pull request.
 on:
   push:
     branches: [main]
@@ -22,16 +33,18 @@ permissions:
 env:
   # The pixi that produced the committed lock, fetched from its release asset by name.
   PIXI_VERSION: 0.81.0
+  # The sha256 of that asset (pixi-x86_64-unknown-linux-musl of v0.81.0): this repository's own
+  # measurement of 2026-10-08, from two downloads at different times, equal to the binary the
+  # session that pinned the lock runs; pixi's release publishes no checksum asset to compare with.
+  # A new pixi version means a new digest, measured again the same way.
+  PIXI_SHA256: 248510f5f75460a2ae4ec62d761e15c0191dc35db3b1da6f82d9f17c6017051d
 
 jobs:
-  group:
-    name: standards / ${{ matrix.group }}
+  standards:
+    # The required check: green only when every group's step is.
+    name: standards (every group green)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        group: [readability, design, duplication, coverage, security, supply-chain]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -39,14 +52,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: install pixi
+        # The digest is checked before the file is made executable or run; a file that is not the
+        # one measured is removed and the job fails.
         run: |
           curl -fsSL -o /usr/local/bin/pixi \
             "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl"
+          echo "${PIXI_SHA256}  /usr/local/bin/pixi" | sha256sum -c - || { rm -f /usr/local/bin/pixi; exit 1; }
           chmod 0755 /usr/local/bin/pixi
           pixi --version
       - name: reconstruct the environment from the lock
         run: pixi install --locked
       - name: the commit the new code starts from
+        id: base
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
@@ -62,33 +79,73 @@ jobs:
           fi
           echo "BASE=$base" >> "$GITHUB_ENV"
           echo "the new code starts from: $base"
-      - name: ${{ matrix.group }}
-        env:
-          GROUP: ${{ matrix.group }}
-        run: pixi run --locked python -m beethoven_qa standards "$GROUP" --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
-      - name: keep the SARIF log
+      # One step per group, in docs/STANDARDS.md's order. Each runs once the base is known, even
+      # after a group before it failed, so a run names every group that fails, not only the first.
+      - name: readability
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards readability --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: design
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards design --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: duplication
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards duplication --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: coverage
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards coverage --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: security
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards security --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: supply-chain
+        if: ${{ !cancelled() && steps.base.outcome == 'success' }}
+        run: pixi run --locked python -m beethoven_qa standards supply-chain --base "$BASE" --sarif "$RUNNER_TEMP/sarif"
+      - name: keep the SARIF logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: sarif-${{ matrix.group }}
+          name: sarif
           path: ${{ runner.temp }}/sarif/
           if-no-files-found: ignore
           retention-days: 30
 
-  all:
-    # The required check: green only when every group's job is.
-    name: standards (every group green)
-    if: ${{ always() }}
-    needs: group
+  scorecard:
+    # OpenSSF Scorecard over the tree, as a report: the scores go to the step log and the JSON to
+    # an artifact, and no check waits for this job. Only the checks that read files run; the
+    # seven that ask GitHub's API (Branch-Protection, CI-Tests, CII-Best-Practices, Code-Review,
+    # Contributors, Maintained, Signed-Releases) refuse a local tree (measured 2026-10-08 with
+    # 5.5.0). No pixi install here: Binary-Artifacts counts the installed environment's binaries
+    # as artifacts of the repository (measured the same day: one binary under .pixi/ scored 9).
+    name: scorecard (report)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    env:
+      SCORECARD_VERSION: 5.5.0
+      # The sha256 of scorecard_5.5.0_linux_amd64.tar.gz, equal to the release's published
+      # scorecard_checksums.txt (read 2026-10-08). A new version means a new digest, read again.
+      SCORECARD_SHA256: 83b90a05c1540ef1390db1cd5711e5fd04be9c1d8537fb84d39d02092d6a8dff
     steps:
-      - name: every group passed
-        env:
-          RESULT: ${{ needs.group.result }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: fetch scorecard and check its digest
         run: |
-          if [ "$RESULT" != success ]; then
-            echo "::error::a standards group did not pass ($RESULT); its own job says which and why"
-            exit 1
-          fi
-          echo "every standards group passed"
+          curl -fsSL -o "$RUNNER_TEMP/scorecard.tar.gz" \
+            "https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_amd64.tar.gz"
+          echo "${SCORECARD_SHA256}  $RUNNER_TEMP/scorecard.tar.gz" | sha256sum -c - || { rm -f "$RUNNER_TEMP/scorecard.tar.gz"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/scorecard"
+          tar -xzf "$RUNNER_TEMP/scorecard.tar.gz" -C "$RUNNER_TEMP/scorecard" scorecard
+      - name: score the tree
+        env:
+          CHECKS: Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,Fuzzing,License,Packaging,Pinned-Dependencies,SAST,Security-Policy,Token-Permissions,Vulnerabilities
+        run: |
+          "$RUNNER_TEMP/scorecard/scorecard" --local . --checks="$CHECKS" --show-details
+          "$RUNNER_TEMP/scorecard/scorecard" --local . --checks="$CHECKS" --format json > "$RUNNER_TEMP/scorecard.json"
+      - name: keep the scores
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scorecard
+          path: ${{ runner.temp }}/scorecard.json
+          if-no-files-found: ignore
+          retention-days: 30

@@ -26,10 +26,13 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 
 from beethoven_qa.gate import GateConfig
+from beethoven_qa.scope import _resolve
 from beethoven_qa.standards import (
     coverage,
     design,
@@ -50,33 +53,6 @@ __all__ = ["GROUPS"]
 GROUPS: dict[str, ModuleType] = {
     m.GROUP.name: m for m in (readability, design, duplication, coverage, security, supply_chain)
 }
-
-
-def _commit(root: Path, ref: str) -> str:
-    return _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").strip()
-
-
-def _resolve(root: Path, base: str) -> str | None:
-    # The base commit, or None for no base; ValueError when it cannot be told.
-    if base == "none":
-        return None
-    if base != "auto":
-        try:
-            return _commit(root, base)
-        except subprocess.CalledProcessError:
-            raise ValueError(f"{base} is not a commit of this repository") from None
-    candidates = ["refs/remotes/origin/main", "refs/remotes/origin/master"]
-    try:
-        named = _git(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD").strip()
-        candidates.insert(0, named)
-    except subprocess.CalledProcessError:
-        pass
-    for ref in candidates:
-        try:
-            return _git(root, "merge-base", "HEAD", _commit(root, ref)).strip()
-        except subprocess.CalledProcessError:
-            continue
-    raise ValueError("the remote's default branch is not known here; pass --base <commit>")
 
 
 def _untracked(root: Path) -> list[tuple[str, Ranges]]:
@@ -160,24 +136,33 @@ def _one(name: str, context: Context, sarif: Path | None) -> int:
     return 0 if report.passed else 1
 
 
+@contextmanager
+def _prepared(root: Path, base: str) -> Iterator[tuple[Context, str | None]]:
+    # What every group is given, and the base commit (None for no base), with the base's tree
+    # extracted beside the checkout for as long as the groups run. OSError, ValueError (a table
+    # that cannot be used, a base that cannot be told) or git's own error when it cannot be made.
+    config = GateConfig.from_pyproject(root)
+    commit = _resolve(root, base)
+    changes = _changes(root, commit)
+    package = f"{config.src}/{config.package}".strip("/")
+    with tempfile.TemporaryDirectory(prefix="beethoven-qa-base-") as tmp:
+        if commit:
+            _extract(root, commit, [package, supply_chain.WORKFLOWS], Path(tmp))
+        yield Context(root, Path(tmp) if commit else None, package, changes), commit
+
+
 def _run(root: Path, names: list[str], base: str = "auto", sarif: Path | None = None) -> int:
-    root = root.resolve()
     try:
-        config = GateConfig.from_pyproject(root)
-        commit = _resolve(root, base)
-        changes = _changes(root, commit)
+        with _prepared(root.resolve(), base) as (context, commit):
+            where = f"against {commit[:12]}" if commit else "on the whole tree (no base)"
+            print(
+                f"standards: {', '.join(names)} on {context.package} and "
+                f"{supply_chain.WORKFLOWS}, {where}"
+            )
+            return max(_one(name, context, sarif) for name in names)
     except (OSError, ValueError) as exc:
         print(f"standards: {exc}")
         return 2
     except subprocess.CalledProcessError as exc:
         print(f"standards: git failed: {exc}")
         return 2
-    package = f"{config.src}/{config.package}".strip("/")
-    where = f"against {commit[:12]}" if commit else "on the whole tree (no base)"
-    print(f"standards: {', '.join(names)} on {package} and {supply_chain.WORKFLOWS}, {where}")
-    with tempfile.TemporaryDirectory(prefix="beethoven-qa-base-") as tmp:
-        tree = Path(tmp) if commit else None
-        if commit:
-            _extract(root, commit, [package, supply_chain.WORKFLOWS], Path(tmp))
-        context = Context(root, tree, package, changes)
-        return max(_one(name, context, sarif) for name in names)

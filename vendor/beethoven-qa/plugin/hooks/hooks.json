@@ -1,0 +1,17 @@
+{
+  "description": "beethoven-qa's code standards as a session edits: after every Edit or Write, what CI would block in that file, said beside the edit",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}\"/hooks/coach.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -20,7 +20,11 @@ channels = ["conda-forge"]
 # nodes, and the lock must match the platform a run actually executes on. The three laptop
 # platforms this lock once carried were bee's, the account switch, and left with it for
 # beethoven-agents at the split (2026-10-04); nothing here runs on a laptop.
-platforms = ["linux-64"]
+platforms = [{ name = "linux-64-glibc234", platform = "linux-64", glibc = "2.34" }]
+# glibc 2.34 or later, because jscpd (the duplication detector, from PyPI) ships manylinux_2_34
+# wheels only; the entry is named apart from its subdirectory because it states that floor, as
+# beethoven-qa's pixi.toml does. The Apptainer image (ubuntu:24.04), GitHub's runners and a cloud
+# session all have it; the grid's CentOS 7 login node (2.17) never runs the gate, by the grid rules.
 # Same-name derivation is off so the solve does not depend on an external conda<->PyPI mapping
 # host. The cost is an overlap the lock does record: CrossHair's PyPI requirements bring PyPI copies
 # of packaging, typing-extensions and mypy-extensions beside conda-forge's, at the same versions,
@@ -30,7 +34,7 @@ conda-pypi-map = false
 
 [dependencies]
 # Pinned low bounds only; the lock pins the exact build. conda-forge is the primary channel
-# (REFORMS prefers it); the one tool that is not packaged there comes from PyPI below.
+# (REFORMS prefers it); the two tools that are not packaged there come from PyPI below.
 python = "3.11.*"
 pip = "*"
 # --- Goal 1: contracts and layered runtime types ---
@@ -51,11 +55,16 @@ bandit = ">=1.9"         # security: weaknesses mapped to CWE
 coverage = ">=7.10"      # coverage: line coverage of the tests, read for the new lines only
 pyyaml = ">=6"           # supply chain: the workflow files
 types-pyyaml = ">=6"     # mypy's stubs for pyyaml
+zizmor = ">=1.30"        # supply chain: the established auditor of the workflow files, beside the reader
+lizard = ">=1.24"        # readability: lines of code per function (NLOC)
 
 [pypi-dependencies]
 # The symbolic-proof layer. CrossHair is published on PyPI only (not conda-forge); it pulls in
-# z3-solver itself, so z3 is not declared separately and there is no conda/PyPI overlap to reconcile.
+# z3-solver itself, so z3 is not declared separately (the overlap it brings is described above).
 crosshair-tool = ">=0.0.60"
+# The duplication detector (Rabin-Karp over tokens), published on PyPI as a self-contained binary
+# wheel (manylinux_2_34; the glibc floor above). Read through its JSON report.
+jscpd = ">=5.4"
 
 [activation]
 # The package and the pinned copy of beethoven-qa (vendor/beethoven-qa; beethoven-qa's own
@@ -76,8 +85,8 @@ symbolic = "python -m beethoven_qa gate"
 # The pinned copy still hashes to its ORIGIN and the kit files equal the copy's.
 vendor-check = "python -m beethoven_qa vendor-check"
 # The code standards, each group on its own (beethoven-qa's docs/STANDARDS.md), on the code new
-# since where this branch left the remote's default branch; CI runs each group as its own job
-# (the kit's standards.yml).
+# since where this branch left the remote's default branch; CI runs each group as a step of one
+# job (the kit's standards.yml).
 standards = "python -m beethoven_qa standards all"
 # The interface standard's five rules on what git tracks (the hub's INTERFACES.md, beethoven-qa's
 # CONSUMING.md step 2): nothing reaches another checkout, interface/INTERFACE.json names every
@@ -85,5 +94,9 @@ standards = "python -m beethoven_qa standards all"
 # surface, and dependence runs one way.
 boundary = "python -m beethoven_qa boundary"
 gate = { depends-on = ["lint", "typecheck", "test", "boundary", "symbolic", "standards", "vendor-check"] }
+# The evidence report (beethoven-qa's docs/REPORT.md): the lanes above, each command as its own
+# process, written up with who decided each verdict, for anyone who doubts code written by an AI.
+# Not a lane of the gate, which it would only run twice; its folder, report/, is never committed.
+report = "python -m beethoven_qa report"
 # The gate before every push, not only in CI: one command points git at the repository's hooks.
 hooks = "git config core.hooksPath .githooks"

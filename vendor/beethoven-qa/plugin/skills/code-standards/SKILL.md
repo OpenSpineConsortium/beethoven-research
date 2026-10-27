@@ -6,7 +6,7 @@ description: Use when writing or changing Python code or GitHub workflows in a r
 # Writing to the code standards
 
 `python -m beethoven_qa standards <group>|all` (the `standards` lane of `pixi run --locked gate`,
-and one CI job per group with `standards (every group green)` the required check) blocks a change
+and in CI a step per group of `standards (every group green)`, the required check) blocks a change
 whose **new or changed code** breaks a limit below. Old findings the change does not make worse are
 reported and pass. The full account, with every limit's source, is `docs/STANDARDS.md` in
 beethoven-qa (in a consumer: `vendor/beethoven-qa/` holds the package; the document is in the
@@ -16,12 +16,12 @@ release).
 
 | Group | Limit |
 | - | - |
-| readability | cognitive complexity at most 15; cyclomatic complexity at most 10; at most 4 parameters (`self` and `cls` not counted); at most 25 lines of code in a function body (docstring, comments and blank lines not counted) |
+| readability | cognitive complexity at most 15; cyclomatic complexity at most 10; at most 4 parameters (`self` and `cls` not counted); at most 25 lines of code in a function body, which is 26 as lizard counts them (its NLOC takes the `def` line and each line of the signature with the body; docstring, comments and blank lines not counted; a nested function is measured on its own, and only its `def` line counts in the function around it) |
 | design | per class: LCOM4 at most 1 (instance methods all joined through shared attributes of `self` or calls), DIT at most 5, CBO at most 14, WMC at most 50, RFC at most 50, NOC at most 10 |
-| duplication | at most 3% of the new lines inside a block of 10 lines and 100 tokens that occurs elsewhere in the package |
+| duplication | at most 3% of the new lines inside a block of 10 lines and 40 of jscpd's tokens that occurs elsewhere in the package (imports and docstrings compared with nothing); no comment holding `jscpd:ignore` |
 | coverage | the tests run at least 80% of the new lines that can run |
 | security | no new bandit finding of medium or high severity and confidence (`shell=True`, `eval`, unsafe YAML or pickle loading, weak hashes for security, binding to all interfaces, and the rest of bandit's list) |
-| supply chain | every action pinned to a full 40-character commit (`uses: owner/repo@<sha> # vX.Y.Z`); no download piped into a shell (`curl ... \| sh`); top-level `permissions:` that grant no write (a job that writes says so on the job); no `${{ github.event.* }}` an outsider controls inside a `run:` script (pass it through `env:`); no checkout of a pull request's head under `pull_request_target` or `workflow_run` |
+| supply chain | every action pinned to a full 40-character commit (`uses: owner/repo@<sha> # vX.Y.Z`); no download piped into a shell (`curl ... \| sh`); a file a step fetches with curl or wget and then runs, installs, unpacks or chmods is checked first, in the same step, against a sha256 digest written there or given through `env:` (`echo "$SHA  file" \| sha256sum -c -`, the file removed on a mismatch); top-level `permissions:` that grant no write (a job that writes says so on the job); no `${{ github.event.* }}` an outsider controls inside a `run:` script (pass it through `env:`); no checkout of a pull request's head under `pull_request_target` or `workflow_run`; and nothing zizmor rates High or Medium at its regular persona (a checkout without `persist-credentials: false`, a `pull_request_target` trigger, an expression expanded into a script, an unpinned action among them; its Low and Informational findings are recorded only), with its ignore comments and `zizmor.yml` not honoured |
 
 ## Writing so the first run is green
 
@@ -48,6 +48,15 @@ release).
 - **Workflows.** Look the commit up (`git ls-remote --tags https://github.com/<owner>/<repo>`) and
   pin it with the tag as a comment; put `permissions: contents: read` (or `{}`) at the top; pass any
   `github.event` text into a script through `env:` and quote it as `"$VAR"`.
+
+## When the hook speaks
+
+After an `Edit` or `Write`, the plugin's hook may put a note beside the result that begins
+`beethoven-qa <version>'s code standards would block this change in CI, in <file>:`, one finding
+per line in the same form as below. The edit has happened; nothing was undone. Fix each finding in
+that file now, while the code is in front of you, the same way as a failed group (step 3 below),
+and the next edit of the file is checked again. A note that does not come means nothing would
+block in that file, not that the hook ran: CI decides, and the full gate still runs before a push.
 
 ## When a group fails
 

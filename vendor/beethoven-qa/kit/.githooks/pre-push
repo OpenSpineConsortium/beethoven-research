@@ -42,5 +42,12 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     refuse "$remote_ref would be $local_sha, which is not the checked-out commit $head."
   fi
 done
-echo "pre-push: running the gate (pixi run --locked gate) before the push" >&2
+# The proof, CrossHair over the contracts, is most of the gate's time and depends only on the
+# modules it proves, what they import and what every proof reads, so the hook proves again only
+# the modules the change since the branch left the remote's default branch reaches
+# (beethoven_qa.scope); every other lane runs whole. BEETHOVEN_QA_BASE=none proves every module,
+# as CI's full runs do.
+BEETHOVEN_QA_BASE="${BEETHOVEN_QA_BASE:-auto}"
+export BEETHOVEN_QA_BASE
+echo "pre-push: running the gate (pixi run --locked gate) before the push, with BEETHOVEN_QA_BASE=$BEETHOVEN_QA_BASE" >&2
 exec pixi run --locked gate
