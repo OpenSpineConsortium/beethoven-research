@@ -5,6 +5,8 @@ behaviour a reader expects, show each layer refusing what it should, and would c
 that was weakened by mistake.
 """
 
+from typing import Any
+
 import pytest
 from beartype.roar import BeartypeCallHintParamViolation
 from beethoven_qa.contracts import ViolationError
@@ -59,8 +61,11 @@ def test_a_padded_or_blank_group_is_refused() -> None:
 
 
 def test_beartype_refuses_wrong_types() -> None:
+    # A list where the signature says tuple, typed Any so a type checker lets the wrong call
+    # through to beartype, which is what this test is for.
+    a_list: Any = ["p1"]
     with pytest.raises(BeartypeCallHintParamViolation):
-        shared_groups(["p1"], ("p2",))  # type: ignore[arg-type]
+        shared_groups(a_list, ("p2",))
 
 
 def test_split_boundary_validation() -> None:

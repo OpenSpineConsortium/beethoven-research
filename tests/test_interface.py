@@ -28,11 +28,21 @@ PYTHON_EXPORT = {
 }
 
 OTHERS = (
-    "beethoven", "beethoven-extension", "beethoven-desktop", "beethoven-qa", "beethoven-agents",
-    "beethoven-sites", "beethoven-base", "beethoven-vscode", "hpcworker", "ashley",
-    "ashley-bridge", "openspineconsortium.github.io", "spinesurg-ct-nnunet",
+    "beethoven",
+    "beethoven-extension",
+    "beethoven-desktop",
+    "beethoven-qa",
+    "beethoven-agents",
+    "beethoven-sites",
+    "beethoven-base",
+    "beethoven-vscode",
+    "hpcworker",
+    "ashley",
+    "ashley-bridge",
+    "openspineconsortium.github.io",
+    "spinesurg-ct-nnunet",
     "u251-xenograft-rat-rnaseq-study",
-)  # fmt: skip
+)
 _NAMES = "|".join(re.escape(n) for n in sorted(OTHERS, key=len, reverse=True))
 # "../<repo>", or a path built from this checkout's parent such as "$(dirname ...)/<repo>"
 SIBLING = re.compile(rf"(?:\.\./|\)/|\}}/)({_NAMES})(?![A-Za-z0-9_.-])")
@@ -107,8 +117,10 @@ def reaches(rel: str) -> list[str]:
         lines = (REPO / rel).read_text(encoding="utf-8").split("\n")
     except (UnicodeDecodeError, OSError):
         return []
-    return [f"{rel}:{n}: {line.strip()[:160]}" for n, line in enumerate(lines, 1)
-            if SIBLING.search(line) or CLONE.search(line)]  # fmt: skip
+    hits = [
+        (n, line) for n, line in enumerate(lines, 1) if SIBLING.search(line) or CLONE.search(line)
+    ]
+    return [f"{rel}:{n}: {line.strip()[:160]}" for n, line in hits]
 
 
 def test_no_tracked_line_reaches_another_checkout() -> None:
