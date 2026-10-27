@@ -16,14 +16,14 @@
   {
    "repository": "OpenSpineConsortium/beethoven-qa",
    "export": "cli",
-   "version": 2,
+   "version": 3,
    "into": "vendor/beethoven-qa",
    "origin": "vendor/beethoven-qa/ORIGIN"
   },
   {
    "repository": "OpenSpineConsortium/beethoven-qa",
    "export": "kit",
-   "version": 1,
+   "version": 3,
    "into": "vendor/beethoven-qa",
    "origin": "vendor/beethoven-qa/ORIGIN"
   },

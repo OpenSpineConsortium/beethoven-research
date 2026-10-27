@@ -82,8 +82,9 @@ def test_the_manifest_offers_nothing() -> None:
 
 def test_the_imports_are_beethoven_qas_four_exports_into_one_copy() -> None:
     assert sorted(i["export"] for i in MANIFEST["imports"]) == ["cli", "kit", "plugin", "python"]
-    # cli is at version 2 from beethoven-qa 3.0.0, for vendor's required --ref
-    versions = {"cli": 2, "kit": 1, "plugin": 1, "python": 1}
+    # cli is at version 3 from beethoven-qa 5.0.0 (report added, --report-all the default) and kit
+    # at version 3 from 6.0.0 (the session-start hook renamed beethoven-qa-session-start.sh)
+    versions = {"cli": 3, "kit": 3, "plugin": 1, "python": 1}
     for entry in MANIFEST["imports"]:
         assert entry["repository"] == QA
         assert entry["version"] == versions[entry["export"]]

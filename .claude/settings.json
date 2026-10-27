@@ -16,8 +16,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/beethoven-qa-session-start.sh",
             "timeout": 900
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/vendor/beethoven-qa/plugin/hooks/coach.sh",
+            "timeout": 60
           }
         ]
       }
