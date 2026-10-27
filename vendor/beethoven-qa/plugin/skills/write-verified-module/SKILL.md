@@ -96,7 +96,7 @@ Where the plugin is not installed (a cloud project thread reading an attached ch
 script with the Workflow tool's `scriptPath`: `plugin/workflows/verify-module.js` in a beethoven-qa
 checkout, `vendor/beethoven-qa/plugin/workflows/verify-module.js` in a consuming one, same `args`.
 
-The result carries each condition's verdict (`verdicts`, from `--report-all`); outside the
+The result carries each condition's verdict (`verdicts`, printed on every run); outside the
 workflow the same comes from `pixi run --locked python -m beethoven_qa gate --module
 <package>.<module> --report-all`. Keep them: "Confirmed over all paths", or "Not confirmed" (no
 counterexample within the bound). An `Unable to meet precondition` line fails the gate: CrossHair

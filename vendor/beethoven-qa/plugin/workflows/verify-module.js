@@ -19,8 +19,8 @@ export const meta = {
 // The verdict is the gate's own on this one module (`gate --module`): the gate refuses a module
 // that is not part of the package it checks, so a mistyped path or a file outside the package comes
 // back as an error, never as proven; both of its checks run on the module whatever the rest of the
-// package looks like; `--report-all` gives every condition's verdict and fails a condition whose
-// preconditions CrossHair could not meet; and a module in which the gate checked nothing is not
+// package looks like; every run gives every condition's verdict and fails a precondition no input
+// can meet (`--report-all` is accepted and changes nothing); and a module in which the gate checked nothing is not
 // proven either. A function listed under [tool.beethoven-qa.unproven] passes the gate without
 // being checked as a target, so the result, the log and the review name each such function with
 // its reason: the reviewer must see which part of a proven module was never proven.
@@ -185,10 +185,11 @@ function proveCommand(module, dotted) {
     '`pixi run --locked python -m beethoven_qa gate --module <dotted name> --report-all` and report its exit ' +
     'status and the dotted name you passed. The gate checks only that module, at the per_condition_timeout ' +
     'the repository declares: its first check lists the public functions without contracts, its second runs ' +
-    'CrossHair on the contracted functions and classes, and --report-all prints every condition\'s verdict ' +
-    'and fails a condition whose preconditions CrossHair could not meet. It exits 2 with a message, having ' +
+    'CrossHair on the contracted functions and classes, and every run prints every condition\'s verdict ' +
+    'and fails a precondition no input can meet (--report-all is accepted and changes nothing). It exits 2 ' +
+    'with a message, having ' +
     'checked nothing, when the module is not part of the package, lies outside it or is exempt: report ' +
-    'refused=true then, and also if the command does not know --module or --report-all; if it refused a file ' +
+    'refused=true then, and also if the command does not know --module; if it refused a file ' +
     'that does exist below the source directory, also run `pixi run --locked python -c "import <dotted name>"` ' +
     'and add its last lines to gate_output (a module that fails on import is refused too). List every ' +
     'counterexample with the function, the input and the violated condition, verbatim; each public function ' +

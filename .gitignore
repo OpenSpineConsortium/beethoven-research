@@ -1,6 +1,10 @@
 # Pixi's solved environment: reconstructable from pixi.lock, never committed.
 .pixi/
 
+# The evidence report's default directory (python -m beethoven_qa report): it is handed over, never
+# committed, and an untracked folder would make the pre-push hook refuse the next push.
+report/
+
 # Python
 __pycache__/
 *.pyc

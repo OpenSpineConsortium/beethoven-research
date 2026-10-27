@@ -28,11 +28,21 @@ PYTHON_EXPORT = {
 }
 
 OTHERS = (
-    "beethoven", "beethoven-extension", "beethoven-desktop", "beethoven-qa", "beethoven-agents",
-    "beethoven-sites", "beethoven-base", "beethoven-vscode", "hpcworker", "ashley",
-    "ashley-bridge", "openspineconsortium.github.io", "spinesurg-ct-nnunet",
+    "beethoven",
+    "beethoven-extension",
+    "beethoven-desktop",
+    "beethoven-qa",
+    "beethoven-agents",
+    "beethoven-sites",
+    "beethoven-base",
+    "beethoven-vscode",
+    "hpcworker",
+    "ashley",
+    "ashley-bridge",
+    "openspineconsortium.github.io",
+    "spinesurg-ct-nnunet",
     "u251-xenograft-rat-rnaseq-study",
-)  # fmt: skip
+)
 _NAMES = "|".join(re.escape(n) for n in sorted(OTHERS, key=len, reverse=True))
 # "../<repo>", or a path built from this checkout's parent such as "$(dirname ...)/<repo>"
 SIBLING = re.compile(rf"(?:\.\./|\)/|\}}/)({_NAMES})(?![A-Za-z0-9_.-])")
@@ -72,8 +82,9 @@ def test_the_manifest_offers_nothing() -> None:
 
 def test_the_imports_are_beethoven_qas_four_exports_into_one_copy() -> None:
     assert sorted(i["export"] for i in MANIFEST["imports"]) == ["cli", "kit", "plugin", "python"]
-    # cli is at version 2 from beethoven-qa 3.0.0, for vendor's required --ref
-    versions = {"cli": 2, "kit": 1, "plugin": 1, "python": 1}
+    # cli is at version 3 from beethoven-qa 5.0.0 (report added, --report-all the default) and kit
+    # at version 3 from 6.0.0 (the session-start hook renamed beethoven-qa-session-start.sh)
+    versions = {"cli": 3, "kit": 3, "plugin": 1, "python": 1}
     for entry in MANIFEST["imports"]:
         assert entry["repository"] == QA
         assert entry["version"] == versions[entry["export"]]
@@ -107,8 +118,10 @@ def reaches(rel: str) -> list[str]:
         lines = (REPO / rel).read_text(encoding="utf-8").split("\n")
     except (UnicodeDecodeError, OSError):
         return []
-    return [f"{rel}:{n}: {line.strip()[:160]}" for n, line in enumerate(lines, 1)
-            if SIBLING.search(line) or CLONE.search(line)]  # fmt: skip
+    hits = [
+        (n, line) for n, line in enumerate(lines, 1) if SIBLING.search(line) or CLONE.search(line)
+    ]
+    return [f"{rel}:{n}: {line.strip()[:160]}" for n, line in hits]
 
 
 def test_no_tracked_line_reaches_another_checkout() -> None:

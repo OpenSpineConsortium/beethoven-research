@@ -57,8 +57,9 @@ Close with one summary line: functions, conditions, confirmed over all paths, no
 
 - **Vacuous.** True whatever the function does (`len(x) >= 0`, `result == result`); a restatement of
   a type beartype already checks; or preconditions that admit no input CrossHair could find, shown
-  by `Unable to meet precondition` (the gate's `--report-all` fails it; without that option the gate
-  passes it in silence).
+  by `Unable to meet precondition` (the gate fails it on every run; a precondition stated over
+  values CrossHair cannot build, such as a string held to a few values, reads the same and is
+  restated over an enum).
 - **Restates the implementation.** The postcondition is the body again (`result == max(0, cap -
   used)` over `return max(0, cap - used)`), so it proves the code equals itself and says nothing
   about intent. Propose the properties instead: the range, the exact case, the saturating case. A

@@ -589,10 +589,11 @@ for (let round = 1; round <= maxRounds; round++) {
       `the gate restricted to ${module}, at the per_condition_timeout the repository declares. Its first ` +
       'check lists the public functions of the module without contracts, its second runs CrossHair on the ' +
       "module's contracted functions and classes whatever the rest of the package looks like, and " +
-      "--report-all prints every condition's verdict and fails a condition whose preconditions CrossHair " +
-      'could not meet. Report its exit status. It exits 2 with a message, having checked nothing, when the ' +
+      "every run prints every condition's verdict and fails a precondition no input can meet " +
+      '(--report-all is accepted and changes nothing). Report its exit status. It exits 2 with a message, ' +
+      'having checked nothing, when the ' +
       'module is not part of the package, lies outside it or is exempt: report refused=true then, and also ' +
-      'if the command does not know --module or --report-all; a module that fails on import is refused too, ' +
+      'if the command does not know --module; a module that fails on import is refused too, ' +
       `so then also run \`pixi run --locked python -c "import ${dotted}"\` and add its last lines to ` +
       'gate_output. List every counterexample with the function, ' +
       'the input and the violated condition, verbatim; each condition reported "Unable to meet ' +

@@ -9,11 +9,21 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # The backstop: a pull request and a push to main prove only the modules their change reaches
+  # (the base step below), so once a day every module is proven again with no base, since
+  # CrossHair's search is bounded and timed and so not quite the same twice (beethoven-qa 9.0.0).
+  schedule:
+    - cron: "17 5 * * *"
 
 env:
   # The pixi that produced the committed lock. Fetched from its release asset by name, not from an
   # install script, so the run makes one fetch it can account for.
   PIXI_VERSION: 0.81.0
+  # The sha256 of that asset (pixi-x86_64-unknown-linux-musl of v0.81.0): beethoven-qa's own
+  # measurement of 2026-10-08, from two downloads at different times, the digest its ci.yml and
+  # the kit's standards.yml and session-start hook check; pixi's release publishes no checksum
+  # asset to compare with. A new pixi version means a new digest, measured again the same way.
+  PIXI_SHA256: 248510f5f75460a2ae4ec62d761e15c0191dc35db3b1da6f82d9f17c6017051d
 
 # No job writes anything; the token each job holds can only read.
 permissions:
@@ -27,14 +37,23 @@ jobs:
     name: gate (lock → lint, typecheck, tests, CrossHair/Z3, vendor-check)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      # The proof's base is read from this workflow's own runs (the base step below).
+      actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          # The proof compares the change with a commit of main, so the history is needed.
+          fetch-depth: 0
           persist-credentials: false
       - name: install pixi
+        # The digest is checked before the file is made executable or run; a file that is not the
+        # one measured is removed and the job fails.
         run: |
           curl -fsSL -o /usr/local/bin/pixi \
             "https://github.com/prefix-dev/pixi/releases/download/v${PIXI_VERSION}/pixi-x86_64-unknown-linux-musl"
+          echo "${PIXI_SHA256}  /usr/local/bin/pixi" | sha256sum -c - || { rm -f /usr/local/bin/pixi; exit 1; }
           chmod 0755 /usr/local/bin/pixi
           pixi --version
       - name: reconstruct the environment from the lock
@@ -50,10 +69,32 @@ jobs:
         run: pixi run --locked typecheck
       - name: tests (typeguard enclave)
         run: pixi run --locked test
+      - name: the commit the proof starts from
+        id: base
+        # On a pull request and a push to main, the newest commit of main whose run of this
+        # workflow passed on a push: the proof then covers only the modules the change since it
+        # reaches (vendor/beethoven-qa/src/beethoven_qa/scope.py says what reaches what). On the
+        # schedule and by hand the step is skipped and every module is proven, the backstop. No
+        # such commit, or one the clone lacks, leaves the base empty, which proves every module too.
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          sha=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null) || sha=
+          base=
+          if [ -n "$sha" ] && git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+            base=$sha
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+          fi
+          echo "the proof starts from: ${base:-none (every module)}"
       - name: symbolic verification (CrossHair + Z3)
+        env:
+          BEETHOVEN_QA_BASE: ${{ steps.base.outputs.base || 'none' }}
         run: pixi run --locked symbolic
       - name: shell syntax of the kit
         # One file per bash -n: with several operands bash parses the first and hands the rest to
         # it as arguments, so a syntax error in any later file went unseen.
         run: |
-          for f in .githooks/pre-push .claude/hooks/session-start.sh; do bash -n "$f" || exit 1; done
+          for f in .githooks/pre-push .claude/hooks/beethoven-qa-session-start.sh; do bash -n "$f" || exit 1; done

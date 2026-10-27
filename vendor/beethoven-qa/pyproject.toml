@@ -4,7 +4,7 @@
 
 [project]
 name = "beethoven-qa"
-version = "3.0.0"
+version = "10.0.0"
 description = "Beethoven code-writing and verification framework: contracts, layered types, the CrossHair/Z3 gate"
 requires-python = ">=3.11"
 # Runtime dependencies are pinned by pixi.lock (here, and in every repository that carries a copy of
@@ -38,7 +38,8 @@ python_version = "3.11"
 mypy_path = "src"
 packages = ["beethoven_qa"]
 strict = true
-# icontract and beartype ship their own types; crosshair is a dev tool, never imported by the package.
+# icontract and beartype ship their own types; crosshair is a dev tool, imported by the package only
+# where _crosshair.py starts it for the gate.
 warn_unused_ignores = true
 
 # The gate's settings for this repository (`python -m beethoven_qa gate` reads them). Every

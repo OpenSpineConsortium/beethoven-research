@@ -107,12 +107,15 @@ KIT: tuple[str, ...] = (
     ".githooks/pre-push",
     ".github/workflows/automerge.yml",
     ".github/workflows/rulesets.yml",
-    ".claude/hooks/session-start.sh",
+    ".claude/hooks/beethoven-qa-session-start.sh",
     ".github/workflows/standards.yml",
 )
 # The kit files git runs, so they must be executable: git skips a hook that is not, with only a
 # hint. ORIGIN records no modes, so this is what the plain vendor-check knows of the release's.
-KIT_EXECUTABLE: tuple[str, ...] = (".githooks/pre-push", ".claude/hooks/session-start.sh")
+KIT_EXECUTABLE: tuple[str, ...] = (
+    ".githooks/pre-push",
+    ".claude/hooks/beethoven-qa-session-start.sh",
+)
 
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _HEX40 = re.compile(r"[0-9a-f]{40}")

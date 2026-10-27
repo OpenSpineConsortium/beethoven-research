@@ -135,8 +135,8 @@ beside the definition of done, which says whether code is correct, six groups ho
 package's new code to limits that say whether a person can read it, change it and trust what
 built it: readability, design, duplication, coverage, security and supply chain.
 `pixi run --locked standards` runs them against where the branch left `main` (the gate runs it
-too); the kit's `standards.yml` runs one CI job per group, and `standards (every group green)` is
-a required check. Only what a change makes new or worse blocks; no setting, configuration file or
+too); the kit's `standards.yml` runs the groups as steps of one CI job (beethoven-qa 8.0.0),
+`standards (every group green)`, which is a required check. Only what a change makes new or worse blocks; no setting, configuration file or
 suppression comment here loosens a limit, which changes only in a release of beethoven-qa. The
 `code-standards` skill (`vendor/beethoven-qa/plugin/skills/`) says how to write to them and how
 to answer a failure.
@@ -196,16 +196,17 @@ pixi run --locked vendor-check  # the pinned copy still matches its ORIGIN, the 
 ```
 
 The pinned copy and the five kit files (`.githooks/pre-push`, `.github/workflows/automerge.yml`,
-`.github/workflows/rulesets.yml`, `.claude/hooks/session-start.sh`,
+`.github/workflows/rulesets.yml`, `.claude/hooks/beethoven-qa-session-start.sh`,
 `.github/workflows/standards.yml`) are never edited here; a change
 is made in beethoven-qa, released, and taken with its `vendor` command, which from 3.0.0 reads
 the release from GitHub through your own `gh` sign-in and runs from the copy itself: `pixi run
 --locked python -m beethoven_qa vendor --into . --ref <tag> --kit` (beethoven-qa
 `docs/CONSUMING.md`, "Updating to a new release"). The lock changes only on purpose, by pixi, in a
 change that says so (the slimming of 2026-10-04 re-locked for `linux-64` alone, and the `linux-64`
-entries did not move).
+entries did not move; the re-pin to beethoven-qa 10.0.0 named the platform `linux-64-glibc234`
+for jscpd's glibc floor and locked the same packages beethoven-qa's own lock holds).
 
-A Claude Code cloud session gets the same environment from `.claude/hooks/session-start.sh`
+A Claude Code cloud session gets the same environment from `.claude/hooks/beethoven-qa-session-start.sh`
 (installs pixi 0.81.0 and runs `pixi install --locked`; cloud sessions only, idempotent). That hook
 runs in a session with one repository; a project thread with several repositories does not read it
 and needs the same commands as the environment's setup script, and it must point git at the hooks
@@ -215,13 +216,18 @@ itself (`git config core.hooksPath .githooks`, or `pixi run hooks`) before its f
 `pixi run --locked gate` and a red gate does not leave the machine. The hook gates the commit that
 is pushed: every ref must be the checkout's HEAD and the tree must hold nothing uncommitted
 (untracked files count), or it refuses and says so; from a linked worktree it drops the `GIT_DIR`
-git hands a hook before the gate runs. `SKIP_GATE=1` skips all of it knowingly, and the commit
-says why. On GitHub the same gate is the required check on `main`: the rule lives in
+git hands a hook before the gate runs. From beethoven-qa 9.0.0 the hook sets
+`BEETHOVEN_QA_BASE=auto` unless it is set, so the proof covers only the modules the change since
+the branch left `main` reaches; CI's gate lane gives the proof the newest commit of `main` whose
+gate passed on a push, and a daily scheduled run proves every module with no base, the backstop.
+`SKIP_GATE=1` skips all of it knowingly, and the commit says why. On GitHub the same gate is the
+required check on `main`: the rule lives in
 `.github/rulesets/main.json` (deletion and force-push blocked; the `gate` lane and
-`standards (every group green)` must be green, by their exact job names; organization admins
-bypass) and is applied by the kit's `rulesets.yml`, so whether a pull request lands is decided by
-the tests, with no review step and no human click once auto-merge is armed on it. Pull requests
-are opened ready for review, never as drafts.
+`standards (every group green)` must be green, by their exact job names, on a branch that carries
+`main`, since the policy is strict; organization admins bypass) and is applied by the kit's
+`rulesets.yml`, so whether a pull request lands is decided by the tests, with no review step and
+no human click once auto-merge is armed on it. Pull requests are opened ready for review, never
+as drafts.
 
 Anything that runs a container, a scheduler call or Claude Code runs on the grid inside a Slurm job,
 never on the login node and never on a laptop. The image is beethoven-agents' (`containers/` there);

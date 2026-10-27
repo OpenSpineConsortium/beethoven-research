@@ -20,6 +20,7 @@ limit only by taking another release of beethoven-qa.
 
 import ast
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -89,11 +90,19 @@ def _tool(argv: list[str], cwd: Path | None = None) -> subprocess.CompletedProce
 
 
 def _version(argv: list[str]) -> str:
-    # "ruff 0.16.10" and "bandit 1.9.4\n  python version = ..." both end their first line with the
-    # version; a tool that cannot say is reported as such, never guessed.
+    # "ruff 0.16.10" and "bandit 1.9.4\n  python version = ..." end their first line with the
+    # version, "Coverage.py, version 7.16.2 with C extension" holds it in the middle (the log said
+    # "extension" until 5.0.0, measured 2026-10-08): the first dotted number of the first line is
+    # the version; a tool that cannot say is reported as such, never guessed.
     out = _tool(argv)
-    words = (out.stdout or out.stderr).strip().splitlines()[:1]
-    return words[0].split()[-1] if words and words[0].split() else "unknown"
+    lines = (out.stdout or out.stderr).strip().splitlines()[:1]
+    return _version_word(lines[0]) if lines else "unknown"
+
+
+def _version_word(line: str) -> str:
+    words = [w.rstrip(",") for w in line.split()]
+    dotted = [w for w in words if re.fullmatch(r"[0-9]+(\.[0-9]+)+", w) is not None]
+    return dotted[0] if dotted else "unknown"
 
 
 def _definitions(source: str) -> dict[int, tuple[str, int]]:

@@ -6,8 +6,9 @@ description: Use before writing or changing a Python module in any repository th
 # The definition of done
 
 No module enters a run until it clears every step below. The first four are checked on every push
-(the pre-push hook's `pixi run --locked gate`) and in CI (`pixi install --locked`, then the gate's
-lanes); the last two are how the work is done.
+(the pre-push hook's `pixi run --locked gate`, whose proof of step 4 covers the modules the change
+reaches) and in CI (`pixi install --locked`, then the gate's lanes); the last two are how the work
+is done.
 Every repository runs the same gate: beethoven-qa from its own `src/`, a consuming repository from
 its pinned copy at `vendor/beethoven-qa/` (never edited by hand; `vendor-check` fails one that was).
 
@@ -114,15 +115,26 @@ per_condition_timeout = 20          # seconds per condition, 1 to 600: the decla
   is the `code-standards` skill.
 - `pixi run --locked symbolic` is `python -m beethoven_qa gate`: both checks over the whole package,
   the contract rule and CrossHair at the declared bound. Both always run, and it fails on either.
+  With a base (`--base <ref>`, or `BEETHOVEN_QA_BASE`, which the pre-push hook sets to `auto`),
+  CrossHair proves only the modules the change since that commit reaches, their importers among
+  them, and every module where the change touches what every proof reads; `pyproject.toml` is read
+  by its keys, so a comment, an unproven entry added or reworded, a boundary entry or the table of
+  a tool in `scope.QUIET_TOOLS` (bandit, black, codespell, flake8, isort, mypy, pylint, pyright,
+  pytest, ruff) proves nothing and an unproven entry removed proves the function it named, while
+  any other key proves every module, as does a link or a submodule git tracks; the contract rule
+  still covers the whole package.
 - One module, every condition's verdict: `pixi run --locked python -m beethoven_qa gate --module
   <package>.<module> --report-all`, the dotted name of `src/<package>/<module>.py` (a subpackage's
   module is `<package>.<sub>.<module>`). Both checks on that module alone, at the declared
   `per_condition_timeout`; nobody passes a timeout by hand. It refuses, with exit 2 and having
   checked nothing, a module that is not part of the package, lies outside it or is exempt.
 - A scratch copy outside the package (the check that the contracts can fail) is not a module the
-  gate checks, so CrossHair runs on it directly, at the same declared bound: `pixi run --locked
-  python -m crosshair check <the copy> --analysis_kind=icontract --per_condition_timeout=<N>`, N the
-  `per_condition_timeout` under `[tool.beethoven-qa]`, never another number.
+  gate checks, so CrossHair runs on it directly, at the same declared bound and the way the gate
+  starts it: `pixi run --locked python -m beethoven_qa._crosshair check <the copy>
+  --analysis_kind=icontract --per_condition_timeout=<N> --report_all`, N the
+  `per_condition_timeout` under `[tool.beethoven-qa]`, never another number. The runner is
+  CrossHair's own command line with icontract's bookkeeping made first; `python -m crosshair`
+  alone crashes with a RecursionError in code that calls a contracted function many times.
 
 What the lines mean (CrossHair 0.0.111, measured 2026-10-04):
 
@@ -132,12 +144,13 @@ What the lines mean (CrossHair 0.0.111, measured 2026-10-04):
   when it spans lines). Read its sentence there.
 - `share.py:9: error: ZeroDivisionError:  when calling share(0, 0)`: the body raised for an input
   the preconditions allow; the line is in the body.
-- `--report-all` only: `info: Confirmed over all paths.` is a total proof of that condition;
-  `info: Not confirmed.` means no counterexample within the bound, not a proof; `info: Unable to
-  meet precondition.` means CrossHair found no input that meets the preconditions within the bound,
-  either because none exists (they contradict each other) or because the solver could not find
-  one, so nothing behind them was checked. The gate with `--report-all` fails on that line; without
-  it, that case exits 0 in silence.
+- On every run (`--report-all` is accepted and changes nothing): `info: Confirmed over all paths.`
+  is a total proof of that condition; `info: Not confirmed.` means no counterexample within the
+  bound, not a proof; `info: Unable to meet precondition.` means CrossHair found no input that
+  meets the preconditions within the bound, either because none exists (they contradict each
+  other) or because they are stated over values it cannot build (restate them over an enum), so
+  nothing behind them was checked. The gate fails on that line, and counts the three verdicts
+  under each target and, as its last line before the verdict, over the run.
 
 The gate is green on "Not confirmed". Say "no counterexample within N s per condition", N the
 declared `per_condition_timeout`, unless the line says "Confirmed over all paths". The bound is
